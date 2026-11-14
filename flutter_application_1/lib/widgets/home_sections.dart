@@ -63,6 +63,7 @@ class HomeProductSection extends StatelessWidget {
     required this.products,
     required this.favoriteIds,
     required this.onFavoriteTap,
+    this.onProductTap,
   });
 
   final String title;
@@ -70,6 +71,7 @@ class HomeProductSection extends StatelessWidget {
   final List<JewelryProduct> products;
   final Set<String> favoriteIds;
   final ValueChanged<JewelryProduct> onFavoriteTap;
+  final ValueChanged<JewelryProduct>? onProductTap;
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +98,9 @@ class HomeProductSection extends StatelessWidget {
                 product: product,
                 isFavorite: favoriteIds.contains(product.id),
                 onFavoriteTap: () => onFavoriteTap(product),
+                onTap: onProductTap == null
+                    ? null
+                    : () => onProductTap!(product),
               );
             },
           ),

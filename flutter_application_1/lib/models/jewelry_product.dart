@@ -21,7 +21,14 @@ class JewelryProduct {
     this.totalWeight,
     this.goldWeight,
     this.brand,
+    this.model,
+    this.watchType,
+    this.caseMaterial,
+    this.dialColor,
+    this.movementType,
     this.origin,
+    this.currentPremium,
+    this.originalPremium,
     this.threeDModelUrl,
     this.createdAt,
   });
@@ -58,7 +65,14 @@ class JewelryProduct {
       totalWeight: _doubleValue(data['totalWeight']),
       goldWeight: _doubleValue(data['goldWeight']),
       brand: brand,
+      model: model,
+      watchType: _stringValue(data['watchType']),
+      caseMaterial: _stringValue(data['caseMaterial']),
+      dialColor: _stringValue(data['dialColor']),
+      movementType: _stringValue(data['movementType']),
       origin: _stringValue(data['countryOfOrigin']),
+      currentPremium: _doubleValue(data['currentPremium']),
+      originalPremium: _doubleValue(data['originalPremium']),
       threeDModelUrl: _stringValue(data['threeDModelUrl']),
       createdAt: _dateValue(data['createdAt']),
     );
@@ -79,7 +93,14 @@ class JewelryProduct {
   final double? totalWeight;
   final double? goldWeight;
   final String? brand;
+  final String? model;
+  final String? watchType;
+  final String? caseMaterial;
+  final String? dialColor;
+  final String? movementType;
   final String? origin;
+  final double? currentPremium;
+  final double? originalPremium;
   final String? threeDModelUrl;
   final DateTime? createdAt;
 

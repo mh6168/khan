@@ -17,6 +17,7 @@ import 'account_settings_screen.dart';
 import 'favorites_screen.dart';
 import 'invest_screen.dart';
 import 'profile_screen.dart';
+import 'product_details_screen.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
   const CustomerHomeScreen({
@@ -258,6 +259,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           products: trending,
           favoriteIds: _favoriteIds,
           onFavoriteTap: _toggleFavorite,
+          onProductTap: _openProductDetails,
         ),
         const SizedBox(height: 28),
         HomeProductSection(
@@ -266,6 +268,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           products: arrivals,
           favoriteIds: _favoriteIds,
           onFavoriteTap: _toggleFavorite,
+          onProductTap: _openProductDetails,
         ),
       ],
     );
@@ -348,5 +351,13 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         _favoriteIds.remove(product.id);
       }
     });
+  }
+
+  void _openProductDetails(JewelryProduct product) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProductDetailsScreen(product: product),
+      ),
+    );
   }
 }
