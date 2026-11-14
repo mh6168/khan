@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../data/sample_jewelry.dart';
+import '../data/product_service.dart';
 import '../khan_colors.dart';
 import '../models/jewelry_category.dart';
 import '../models/customer_profile_info.dart';
@@ -36,14 +36,17 @@ class CustomerHomeScreen extends StatefulWidget {
 
 class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   late Future<CustomerProfileInfo> _customerProfile;
+  late Future<List<JewelryProduct>> _products;
   int _selectedTab = 0;
   String _searchQuery = '';
   final Set<String> _favoriteIds = {};
+  List<JewelryProduct> _loadedProducts = [];
 
   @override
   void initState() {
     super.initState();
     _customerProfile = _loadCustomerProfile();
+    _products = ProductService().fetchAvailableProducts();
   }
 
   @override
@@ -141,7 +144,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               1 => InvestScreen(header: _buildHeader(customerName)),
               2 => FavoritesScreen(
                 header: _buildHeader(customerName),
-                products: sampleJewelry
+                products: _loadedProducts
                     .where((product) => _favoriteIds.contains(product.id))
                     .toList(),
                 onFavoriteTap: _toggleFavorite,
@@ -177,9 +180,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     final categories = JewelryCategory.values
         .where((category) => category.label.toLowerCase().contains(query))
         .toList();
-    final matchingTrending = _matchingProducts(trendingJewelry, query);
-    final matchingArrivals = _matchingProducts(newArrivals, query);
-
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
       child: Column(
@@ -207,38 +207,67 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           const SizedBox(height: 14),
           if (categories.isNotEmpty)
             _buildCategoryGrid(categories, width)
-          else if (query.isNotEmpty &&
-              (matchingTrending.isNotEmpty || matchingArrivals.isNotEmpty))
-            _buildNoResults('No matching categories.')
-          else if (query.isNotEmpty &&
-              matchingTrending.isEmpty &&
-              matchingArrivals.isEmpty)
-            _buildNoResults('No matching categories or jewelry.'),
+          else if (query.isNotEmpty && _loadedProducts.isNotEmpty)
+            _buildNoResults('No matching categories.'),
           const SizedBox(height: 30),
-          if (matchingTrending.isNotEmpty)
-            HomeProductSection(
-              title: query.isEmpty ? 'Trending jewelry' : 'Matching jewelry',
-              subtitle: 'Pieces everyone is talking about.',
-              products: matchingTrending,
-              favoriteIds: _favoriteIds,
-              onFavoriteTap: _toggleFavorite,
-            ),
-          if (matchingTrending.isNotEmpty && matchingArrivals.isNotEmpty)
-            const SizedBox(height: 28),
-          if (matchingArrivals.isNotEmpty)
-            HomeProductSection(
-              title: 'New arrivals',
-              subtitle: 'Fresh designs, just added.',
-              products: matchingArrivals,
-              favoriteIds: _favoriteIds,
-              onFavoriteTap: _toggleFavorite,
-            ),
+          FutureBuilder<List<JewelryProduct>>(
+            future: _products,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 36),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return _buildNoResults(
+                  'Products could not be loaded. Please try again later.',
+                );
+              }
+
+              final products = snapshot.data ?? const <JewelryProduct>[];
+              _loadedProducts = products;
+              return _buildProductSections(products, query);
+            },
+          ),
           if (query.isEmpty) ...[
             const SizedBox(height: 28),
             const FeaturedCollectionBanner(),
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildProductSections(List<JewelryProduct> products, String query) {
+    final matchingProducts = _matchingProducts(products, query);
+    if (matchingProducts.isEmpty) {
+      return _buildNoResults(
+        query.isEmpty ? 'No available products yet.' : 'No matching jewelry.',
+      );
+    }
+
+    final trending = matchingProducts.take(6).toList();
+    final arrivals = matchingProducts.take(6).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        HomeProductSection(
+          title: query.isEmpty ? 'Trending jewelry' : 'Matching jewelry',
+          subtitle: 'Pieces everyone is talking about.',
+          products: trending,
+          favoriteIds: _favoriteIds,
+          onFavoriteTap: _toggleFavorite,
+        ),
+        const SizedBox(height: 28),
+        HomeProductSection(
+          title: 'New arrivals',
+          subtitle: 'Fresh designs, just added.',
+          products: arrivals,
+          favoriteIds: _favoriteIds,
+          onFavoriteTap: _toggleFavorite,
+        ),
+      ],
     );
   }
 

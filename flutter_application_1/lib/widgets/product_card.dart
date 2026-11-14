@@ -76,7 +76,9 @@ class ProductCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  '${product.priceEgp} EGP',
+                  product.priceEgp == null
+                      ? 'Price unavailable'
+                      : '${product.priceEgp!.toStringAsFixed(0)} EGP',
                   style: Theme.of(context).textTheme.titleSmall
                       ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
                 ),
@@ -109,43 +111,77 @@ class _ProductArtwork extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Positioned(
-            top: -34,
-            right: -25,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: khanLightGold.withValues(alpha: 0.2),
-                  width: 1.2,
+          if (product.imageUrls.isNotEmpty)
+            Positioned.fill(
+              child: Image.network(
+                product.imageUrls.first,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    _ArtworkFallback(product: product),
+              ),
+            )
+          else
+            _ArtworkFallback(product: product),
+          if (product.imageUrls.isNotEmpty)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: khanDark.withValues(alpha: 0.18),
                 ),
               ),
             ),
-          ),
-          Icon(product.artworkIcon, color: khanLightGold, size: 62),
-          Positioned(
-            bottom: 12,
-            left: 13,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-              decoration: BoxDecoration(
-                color: khanDark.withValues(alpha: 0.58),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'KHAN EDIT',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: khanLightGold,
-                  letterSpacing: 1,
-                  fontSize: 9,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
+    );
+  }
+}
+
+class _ArtworkFallback extends StatelessWidget {
+  const _ArtworkFallback({required this.product});
+
+  final JewelryProduct product;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned(
+          top: -34,
+          right: -25,
+          child: Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: khanLightGold.withValues(alpha: 0.2),
+                width: 1.2,
+              ),
+            ),
+          ),
+        ),
+        Icon(product.artworkIcon, color: khanLightGold, size: 62),
+        Positioned(
+          bottom: 12,
+          left: 13,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: khanDark.withValues(alpha: 0.58),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'KHAN EDIT',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: khanLightGold,
+                letterSpacing: 1,
+                fontSize: 9,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

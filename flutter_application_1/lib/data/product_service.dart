@@ -1,0 +1,33 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../models/jewelry_product.dart';
+
+class ProductService {
+  ProductService({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  Future<List<JewelryProduct>> fetchAvailableProducts() async {
+    final snapshot = await _firestore
+        .collection('products')
+        .where('availability', isEqualTo: 'available')
+        .get();
+
+    final products = snapshot.docs
+        .map(
+          (document) =>
+              JewelryProduct.fromFirestore(document.id, document.data()),
+        )
+        .toList(growable: false);
+    final sortedProducts = [...products]
+      ..sort(
+        (left, right) =>
+            (right.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+                .compareTo(
+                  left.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+                ),
+      );
+    return sortedProducts;
+  }
+}
