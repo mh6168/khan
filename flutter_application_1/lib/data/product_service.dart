@@ -3,13 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/jewelry_product.dart';
 
 class ProductService {
-  ProductService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  ProductService({this.firestore});
 
-  final FirebaseFirestore _firestore;
+  final FirebaseFirestore? firestore;
 
   Future<List<JewelryProduct>> fetchAvailableProducts() async {
-    final snapshot = await _firestore
+    final database = firestore ?? FirebaseFirestore.instance;
+    final snapshot = await database
         .collection('products')
         .where('availability', isEqualTo: 'available')
         .get();
