@@ -11,24 +11,35 @@ class CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
+    return Material(
       color: Colors.white,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
+        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: khanGold.withValues(alpha: 0.22)),
+          ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(_categoryIcon, color: khanGold, size: 32),
-              const SizedBox(height: 10),
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: khanLightGold.withValues(alpha: 0.58),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(_categoryIcon, color: khanDark, size: 27),
+              ),
+              const SizedBox(height: 11),
               Text(
                 category.label,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium
+                style: Theme.of(context).textTheme.labelLarge
                     ?.copyWith(color: khanDark, fontWeight: FontWeight.w600),
               ),
             ],
@@ -40,10 +51,10 @@ class CategoryCard extends StatelessWidget {
 
   IconData get _categoryIcon => switch (category) {
     JewelryCategory.rings => Icons.circle_outlined,
-    JewelryCategory.necklaces => Icons.link,
+    JewelryCategory.necklaces => Icons.cable_outlined,
     JewelryCategory.bracelets => Icons.watch_outlined,
-    JewelryCategory.earrings => Icons.diamond_outlined,
-    JewelryCategory.pendants => Icons.auto_awesome_outlined,
-    JewelryCategory.watches => Icons.access_time,
+    JewelryCategory.earrings => Icons.hearing_outlined,
+    JewelryCategory.pendants => Icons.diamond_outlined,
+    JewelryCategory.watches => Icons.watch,
   };
 }
