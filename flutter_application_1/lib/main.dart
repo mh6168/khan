@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
+import 'screens/customer_home_screen.dart';
 
 const _green = Color(0xFF0D7A61);
 const _darkGreen = Color(0xFF0A5F4B);
@@ -141,9 +142,14 @@ class AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return snapshot.data == null
+        final user = snapshot.data;
+        return user == null
             ? const LoginScreen()
-            : const CustomerHomeScreen();
+            : CustomerHomeScreen(
+                customerId: user.uid,
+                customerName: user.displayName,
+                customerEmail: user.email,
+              );
       },
     );
   }
@@ -494,96 +500,6 @@ class AuthScaffold extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class CustomerHomeScreen extends StatelessWidget {
-  const CustomerHomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Khan Marketplace'),
-        actions: [
-          IconButton(
-            tooltip: 'Log out',
-            onPressed: () => FirebaseAuth.instance.signOut(),
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.check_circle_outline, color: _green, size: 72),
-              const SizedBox(height: 20),
-              Text(
-                'Welcome to Khan${user?.email == null ? '' : ', ${user!.email}'}',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(color: _darkGreen, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'You are signed in as a customer. Your marketplace journey starts here.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              OutlinedButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const MyHomePage(title: 'Khan Home'),
-                  ),
-                ),
-                child: const Text('Open marketplace home'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('Khan marketplace home'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => setState(() => _counter++),
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }
