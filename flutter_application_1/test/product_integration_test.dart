@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_application_1/data/gold_price_service.dart';
-import 'package:flutter_application_1/data/management_api.dart';
 import 'package:flutter_application_1/data/supabase_storage.dart';
 import 'package:flutter_application_1/models/jewelry_product.dart';
 
@@ -54,17 +53,25 @@ void main() {
     expect(product.priceEgp, closeTo(2 * (5250 + 150), 0.001));
   });
 
-  test('builds signed image endpoint URLs for one or multiple paths', () {
+  test('builds public URLs for one or multiple Supabase image paths', () {
     expect(
-      publicSupabaseImageUrls([
-        'jewelers/jeweler-1/jewelry/photos/one.jpg',
-        'jewelers/jeweler-1/jewelry/photos/two image.png',
-      ]),
       [
-        '$managementApiBaseUrl/product-image.php'
-            '?path=jewelers%2Fjeweler-1%2Fjewelry%2Fphotos%2Fone.jpg',
-        '$managementApiBaseUrl/product-image.php'
-            '?path=jewelers%2Fjeweler-1%2Fjewelry%2Fphotos%2Ftwo+image.png',
+        publicSupabaseImageUrl(
+          'jewelers/jeweler-1/jewelry/photos/one.jpg',
+          baseUrl: 'https://example.supabase.co',
+          bucket: 'jeweler-documents',
+        ),
+        publicSupabaseImageUrl(
+          'jewelers/jeweler-1/jewelry/photos/two image.png',
+          baseUrl: 'https://example.supabase.co',
+          bucket: 'jeweler-documents',
+        ),
+      ],
+      [
+        'https://example.supabase.co/storage/v1/object/public/'
+            'jeweler-documents/jewelers/jeweler-1/jewelry/photos/one.jpg',
+        'https://example.supabase.co/storage/v1/object/public/'
+            'jeweler-documents/jewelers/jeweler-1/jewelry/photos/two%20image.png',
       ],
     );
   });

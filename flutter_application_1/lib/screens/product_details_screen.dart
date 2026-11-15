@@ -104,7 +104,7 @@ class _ThreeDAction extends StatelessWidget {
   }
 }
 
-class _ProductGallery extends StatelessWidget {
+class _ProductGallery extends StatefulWidget {
   const _ProductGallery({
     required this.product,
     required this.currentImage,
@@ -116,14 +116,33 @@ class _ProductGallery extends StatelessWidget {
   final ValueChanged<int> onImageChanged;
 
   @override
+  State<_ProductGallery> createState() => _ProductGalleryState();
+}
+
+class _ProductGalleryState extends State<_ProductGallery> {
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: widget.currentImage);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final images = product.imageUrls;
+    final images = widget.product.imageUrls;
     return Column(
       children: [
         Container(
           height: 330,
           decoration: BoxDecoration(
-            color: product.artworkColor,
+            color: widget.product.artworkColor,
             borderRadius: BorderRadius.circular(28),
             boxShadow: [
               BoxShadow(
@@ -135,16 +154,22 @@ class _ProductGallery extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: images.isEmpty
-              ? _GalleryFallback(product: product)
+              ? _GalleryFallback(product: widget.product)
               : PageView.builder(
+                  key: PageStorageKey<String>(
+                    'product-gallery-${widget.product.id}',
+                  ),
+                  controller: _pageController,
+                  scrollDirection: Axis.horizontal,
+                  physics: const PageScrollPhysics(),
                   itemCount: images.length,
-                  onPageChanged: onImageChanged,
+                  onPageChanged: widget.onImageChanged,
                   itemBuilder: (context, index) => Image.network(
                     images[index],
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) {
                       logSupabaseImageError(images[index], error);
-                      return _GalleryFallback(product: product);
+                      return _GalleryFallback(product: widget.product);
                     },
                   ),
                 ),
@@ -157,11 +182,11 @@ class _ProductGallery extends StatelessWidget {
               images.length,
               (index) => AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                width: index == currentImage ? 22 : 7,
+                width: index == widget.currentImage ? 22 : 7,
                 height: 7,
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 decoration: BoxDecoration(
-                  color: index == currentImage ? khanGold : khanDark,
+                  color: index == widget.currentImage ? khanGold : khanDark,
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),

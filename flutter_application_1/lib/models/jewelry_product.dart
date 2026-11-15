@@ -116,6 +116,36 @@ class JewelryProduct {
   final String? threeDModelUrl;
   final DateTime? createdAt;
 
+  JewelryProduct copyWithImageUrls(List<String> urls) {
+    return JewelryProduct(
+      id: id,
+      name: name,
+      category: category,
+      priceEgp: priceEgp,
+      artworkIcon: artworkIcon,
+      artworkColor: artworkColor,
+      productType: productType,
+      imageUrls: urls,
+      jewelerId: jewelerId,
+      description: description,
+      goldKarat: goldKarat,
+      goldColor: goldColor,
+      totalWeight: totalWeight,
+      goldWeight: goldWeight,
+      brand: brand,
+      model: model,
+      watchType: watchType,
+      caseMaterial: caseMaterial,
+      dialColor: dialColor,
+      movementType: movementType,
+      origin: origin,
+      currentPremium: currentPremium,
+      originalPremium: originalPremium,
+      threeDModelUrl: threeDModelUrl,
+      createdAt: createdAt,
+    );
+  }
+
   static String? _stringValue(dynamic value) {
     return value is String && value.trim().isNotEmpty ? value.trim() : null;
   }
