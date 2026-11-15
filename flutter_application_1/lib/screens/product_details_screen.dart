@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/supabase_storage.dart';
 import '../khan_colors.dart';
 import '../models/jewelry_product.dart';
 
@@ -141,8 +142,10 @@ class _ProductGallery extends StatelessWidget {
                   itemBuilder: (context, index) => Image.network(
                     images[index],
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _GalleryFallback(product: product),
+                    errorBuilder: (context, error, stackTrace) {
+                      logSupabaseImageError(images[index], error);
+                      return _GalleryFallback(product: product);
+                    },
                   ),
                 ),
         ),

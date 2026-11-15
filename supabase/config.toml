@@ -1,0 +1,4 @@
+project_id = "srqsmtgrwgzuoghfphtq"
+
+[functions.gold-prices]
+verify_jwt = false

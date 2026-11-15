@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../data/gold_price_service.dart';
 import '../data/supabase_storage.dart';
 
 class JewelryProduct {
@@ -33,7 +34,11 @@ class JewelryProduct {
     this.createdAt,
   });
 
-  factory JewelryProduct.fromFirestore(String id, Map<String, dynamic> data) {
+  factory JewelryProduct.fromFirestore(
+    String id,
+    Map<String, dynamic> data, {
+    Map<int, double> goldPrices = const {},
+  }) {
     final productType = data['productType'] == 'watch' ? 'watch' : 'jewelry';
     final brand = _stringValue(data['brand']);
     final model = _stringValue(data['model']);
@@ -50,7 +55,14 @@ class JewelryProduct {
       id: id,
       name: displayName.isEmpty ? 'Jewelry piece' : displayName,
       category: category,
-      priceEgp: productType == 'watch' ? _doubleValue(data['price']) : null,
+      priceEgp: productType == 'watch'
+          ? _doubleValue(data['price'])
+          : GoldPriceService.calculateJewelryPrice(
+              goldWeight: _doubleValue(data['goldWeight']),
+              goldKarat: _intValue(data['goldKarat']),
+              currentPremium: _doubleValue(data['currentPremium']),
+              goldPrices: goldPrices,
+            ),
       artworkIcon: productType == 'watch'
           ? Icons.watch_outlined
           : Icons.diamond_outlined,

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'gold_price_service.dart';
 import '../models/jewelry_product.dart';
 
 class ProductService {
@@ -9,6 +10,7 @@ class ProductService {
 
   Future<List<JewelryProduct>> fetchAvailableProducts() async {
     final database = firestore ?? FirebaseFirestore.instance;
+    final goldPrices = await const GoldPriceService().fetchPrices();
     final snapshot = await database
         .collection('products')
         .where('availability', isEqualTo: 'available')
@@ -16,8 +18,11 @@ class ProductService {
 
     final products = snapshot.docs
         .map(
-          (document) =>
-              JewelryProduct.fromFirestore(document.id, document.data()),
+          (document) => JewelryProduct.fromFirestore(
+            document.id,
+            document.data(),
+            goldPrices: goldPrices,
+          ),
         )
         .toList(growable: false);
     final sortedProducts = [...products]

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../khan_colors.dart';
+import '../data/supabase_storage.dart';
 import '../models/jewelry_product.dart';
 
 class ProductCard extends StatelessWidget {
@@ -125,8 +126,10 @@ class _ProductArtwork extends StatelessWidget {
               child: Image.network(
                 product.imageUrls.first,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    _ArtworkFallback(product: product),
+                errorBuilder: (context, error, stackTrace) {
+                  logSupabaseImageError(product.imageUrls.first, error);
+                  return _ArtworkFallback(product: product);
+                },
               ),
             )
           else
