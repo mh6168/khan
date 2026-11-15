@@ -15,7 +15,7 @@ const _ivory = Color(0xFFFFFCF2);
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await dotenv.load(fileName: '../.env');
+    await dotenv.load(fileName: '.env');
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
