@@ -25,6 +25,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /applications/{applicationId} {
+      allow get: if request.auth != null
+        && (request.auth.uid == applicationId
+          || resource.data.status == 'approved');
+    }
+
     match /products/{productId} {
       allow read: if request.auth != null
         && resource.data.availability == 'available';

@@ -1,14 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/jeweler_service.dart';
+import '../data/product_service.dart';
 import '../data/supabase_storage.dart';
 import '../khan_colors.dart';
+import '../models/jeweler_profile.dart';
 import '../models/jewelry_product.dart';
+import '../widgets/jeweler_avatar.dart';
+import 'jeweler_profile_screen.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
-  const ProductDetailsScreen({super.key, required this.product});
+  const ProductDetailsScreen({
+    super.key,
+    required this.product,
+    this.jewelerService,
+    this.productService,
+  });
 
   final JewelryProduct product;
+  final JewelerService? jewelerService;
+  final ProductService? productService;
 
   @override
   State<ProductDetailsScreen> createState() => _ProductDetailsScreenState();
@@ -16,6 +28,30 @@ class ProductDetailsScreen extends StatefulWidget {
 
 class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   int _currentImage = 0;
+  late Future<JewelerProfile?> _jewelerProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _jewelerProfile = _loadJewelerProfile();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProductDetailsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.product.jewelerId != widget.product.jewelerId) {
+      _jewelerProfile = _loadJewelerProfile();
+    }
+  }
+
+  Future<JewelerProfile?> _loadJewelerProfile() {
+    final jewelerId = widget.product.jewelerId?.trim();
+    if (jewelerId == null || jewelerId.isEmpty) {
+      return Future.value(null);
+    }
+    return (widget.jewelerService ?? const JewelerService())
+        .fetchApprovedJeweler(jewelerId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,11 +86,216 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 ],
                 const SizedBox(height: 24),
                 _Specifications(product: widget.product),
+                const SizedBox(height: 24),
+                _ListedBySection(
+                  jewelerProfile: _jewelerProfile,
+                  onVisitStore: (profile) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => JewelerProfileScreen(
+                          jewelerId: profile.id,
+                          jewelerService: widget.jewelerService,
+                          productService: widget.productService,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ListedBySection extends StatelessWidget {
+  const _ListedBySection({
+    required this.jewelerProfile,
+    required this.onVisitStore,
+  });
+
+  final Future<JewelerProfile?> jewelerProfile;
+  final ValueChanged<JewelerProfile> onVisitStore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Listed By',
+          style: Theme.of(context).textTheme.titleLarge
+              ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 12),
+        FutureBuilder<JewelerProfile?>(
+          future: jewelerProfile,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const _ListedByCard(
+                message: 'Loading jeweler information...',
+                loading: true,
+              );
+            }
+            if (snapshot.hasError) {
+              return const _ListedByCard(
+                message: 'Jeweler information is currently unavailable.',
+              );
+            }
+
+            final profile = snapshot.data;
+            if (profile == null) {
+              return const _ListedByCard(
+                message: 'Seller information is not available for this item.',
+              );
+            }
+
+            return _ListedByCard(
+              profile: profile,
+              onTap: () => onVisitStore(profile),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _ListedByCard extends StatelessWidget {
+  const _ListedByCard({
+    this.profile,
+    this.message = 'Store description not provided yet.',
+    this.loading = false,
+    this.onTap,
+  });
+
+  final JewelerProfile? profile;
+  final String message;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final jeweler = profile;
+    final storeName = jeweler?.displayName;
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: khanGold.withValues(alpha: 0.28)),
+            boxShadow: [
+              BoxShadow(
+                color: khanDark.withValues(alpha: 0.05),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              if (jeweler != null)
+                JewelerAvatar(profile: jeweler, size: 60)
+              else
+                _ListedByPlaceholder(loading: loading),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (storeName != null)
+                      Text(
+                        storeName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: khanDark,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    if (jeweler?.isVerified ?? false) ...[
+                      const SizedBox(height: 5),
+                      const _VerifiedBadge(),
+                    ],
+                    const SizedBox(height: 6),
+                    if (jeweler != null)
+                      Text(
+                        jeweler.location ?? 'Location not provided',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: khanSecondaryDark),
+                      ),
+                    Text(
+                      jeweler?.description ?? message,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: khanSecondaryDark.withValues(alpha: 0.78),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onTap != null) ...[
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_forward_ios_rounded, color: khanGold),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ListedByPlaceholder extends StatelessWidget {
+  const _ListedByPlaceholder({required this.loading});
+
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: const BoxDecoration(color: khanDark, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: loading
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2, color: khanGold),
+            )
+          : const Icon(Icons.storefront_outlined, color: khanGold, size: 30),
+    );
+  }
+}
+
+class _VerifiedBadge extends StatelessWidget {
+  const _VerifiedBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.verified_rounded, color: khanGold, size: 16),
+        const SizedBox(width: 4),
+        Text(
+          'Verified jeweler',
+          style: Theme.of(context).textTheme.labelSmall
+              ?.copyWith(color: khanSecondaryDark, fontWeight: FontWeight.w700),
+        ),
+      ],
     );
   }
 }

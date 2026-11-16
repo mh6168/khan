@@ -8,14 +8,14 @@ class ProductCard extends StatelessWidget {
   const ProductCard({
     super.key,
     required this.product,
-    required this.isFavorite,
-    required this.onFavoriteTap,
+    this.isFavorite = false,
+    this.onFavoriteTap,
     this.onTap,
   });
 
   final JewelryProduct product;
   final bool isFavorite;
-  final VoidCallback onFavoriteTap;
+  final VoidCallback? onFavoriteTap;
   final VoidCallback? onTap;
 
   @override
@@ -36,27 +36,28 @@ class ProductCard extends StatelessWidget {
             Stack(
               children: [
                 _ProductArtwork(product: product),
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: IconButton.filled(
-                    tooltip: isFavorite
-                        ? 'Remove from favorites'
-                        : 'Add to favorites',
-                    onPressed: onFavoriteTap,
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.92),
-                      foregroundColor: isFavorite ? khanGold : khanDark,
-                      minimumSize: const Size(38, 38),
-                    ),
-                    icon: Icon(
-                      isFavorite
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      size: 20,
+                if (onFavoriteTap != null)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: IconButton.filled(
+                      tooltip: isFavorite
+                          ? 'Remove from favorites'
+                          : 'Add to favorites',
+                      onPressed: onFavoriteTap,
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white.withValues(alpha: 0.92),
+                        foregroundColor: isFavorite ? khanGold : khanDark,
+                        minimumSize: const Size(38, 38),
+                      ),
+                      icon: Icon(
+                        isFavorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        size: 20,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
             Padding(
