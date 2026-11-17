@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../khan_colors.dart';
-import '../../models/investment_demo_data.dart';
-import 'demo_data_badge.dart';
+import '../../models/investment.dart';
 
 class RecentActivity extends StatelessWidget {
-  const RecentActivity({super.key});
+  const RecentActivity({super.key, required this.activities});
+
+  final List<InvestmentActivity> activities;
 
   @override
   Widget build(BuildContext context) {
@@ -27,34 +28,47 @@ class RecentActivity extends StatelessWidget {
                       ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
                 ),
               ),
-              const DemoDataBadge(compact: true),
             ],
           ),
           const SizedBox(height: 4),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Sample entries for display only',
+              'Completed purchases and buybacks',
               style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: khanSecondaryDark.withValues(alpha: 0.72)),
             ),
           ),
           const SizedBox(height: 10),
-          for (var i = 0; i < recentInvestmentActivityDemo.length; i++) ...[
-            _ActivityRow(activity: recentInvestmentActivityDemo[i]),
-            if (i != recentInvestmentActivityDemo.length - 1)
+          if (activities.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Text('No completed investment activity yet'),
+            )
+          else
+            for (var i = 0; i < activities.length; i++) ...[
+            _ActivityRow(activity: activities[i]),
+            if (i != activities.length - 1)
               Divider(height: 1, color: khanDark.withValues(alpha: 0.07)),
-          ],
+            ],
         ],
       ),
     );
   }
 }
 
+String _month(int month) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return months[month - 1];
+}
+
 class _ActivityRow extends StatelessWidget {
   const _ActivityRow({required this.activity});
 
-  final InvestmentActivityDemo activity;
+  final InvestmentActivity activity;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +83,13 @@ class _ActivityRow extends StatelessWidget {
               color: khanLightGold.withValues(alpha: 0.65),
               borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(activity.icon, color: khanDark, size: 19),
+            child: Icon(
+              activity.type == 'Purchase'
+                  ? Icons.south_west_rounded
+                  : Icons.north_east_rounded,
+              color: khanDark,
+              size: 19,
+            ),
           ),
           const SizedBox(width: 11),
           Expanded(
@@ -85,7 +105,9 @@ class _ActivityRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  activity.date,
+                  activity.date == null
+                      ? 'Date unavailable'
+                      : '${activity.date!.day} ${_month(activity.date!.month)} ${activity.date!.year}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: khanSecondaryDark.withValues(alpha: 0.7),
                     fontSize: 11,
@@ -99,7 +121,7 @@ class _ActivityRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                activity.amount,
+                '${activity.type == 'Purchase' ? '+' : '-'} ${activity.quantity} ${activity.unit}',
                 style: Theme.of(context).textTheme.labelMedium
                     ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
               ),

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../khan_colors.dart';
-import '../../models/investment_demo_data.dart';
-import 'demo_data_badge.dart';
 
 class PerformanceChart extends StatelessWidget {
-  const PerformanceChart({super.key});
+  const PerformanceChart({super.key, required this.values});
+
+  final List<double> values;
 
   @override
   Widget build(BuildContext context) {
@@ -28,76 +28,41 @@ class PerformanceChart extends StatelessWidget {
                       ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
                 ),
               ),
-              const DemoDataBadge(compact: true),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Illustrative portfolio trend · sample data',
+            'Actual saved investment price history',
             style: Theme.of(context).textTheme.bodySmall
                 ?.copyWith(color: khanSecondaryDark.withValues(alpha: 0.75)),
           ),
           const SizedBox(height: 18),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '+6.8%',
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    'sample period',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: khanSecondaryDark.withValues(alpha: 0.7),
-                    ),
-                  ),
+          if (values.length < 2)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 30),
+              child: Center(
+                child: Text(
+                  'Your investment performance will appear here as price history becomes available.',
+                  textAlign: TextAlign.center,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 13),
-          SizedBox(
-            height: 150,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: _PerformanceChartPainter(investmentPerformanceDemo),
+            )
+          else ...[
+            Text(
+              '${((values.last - values.first) / values.first * 100).toStringAsFixed(1)}%',
+              style: Theme.of(context).textTheme.headlineSmall
+                  ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
             ),
-          ),
-          const SizedBox(height: 9),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _ChartDateLabel('JUN'),
-              _ChartDateLabel('JUL'),
-              _ChartDateLabel('AUG'),
-              _ChartDateLabel('SEP'),
-              _ChartDateLabel('OCT'),
-              _ChartDateLabel('NOV'),
-            ],
-          ),
+            const SizedBox(height: 13),
+            SizedBox(
+              height: 150,
+              width: double.infinity,
+              child: CustomPaint(
+                painter: _PerformanceChartPainter(values),
+              ),
+            ),
+          ],
         ],
-      ),
-    );
-  }
-}
-
-class _ChartDateLabel extends StatelessWidget {
-  const _ChartDateLabel(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: khanSecondaryDark.withValues(alpha: 0.58),
-        letterSpacing: 0.7,
       ),
     );
   }

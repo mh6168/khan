@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../khan_colors.dart';
-import '../../models/investment_demo_data.dart';
-import 'demo_data_badge.dart';
+import '../../models/investment.dart';
 
 class InvestmentUnitCard extends StatelessWidget {
   const InvestmentUnitCard({
@@ -11,7 +10,7 @@ class InvestmentUnitCard extends StatelessWidget {
     required this.onBuyTap,
   });
 
-  final InvestmentUnitDemo unit;
+  final InvestmentUnit unit;
   final VoidCallback onBuyTap;
 
   @override
@@ -48,7 +47,23 @@ class InvestmentUnitCard extends StatelessWidget {
                 child: Icon(unit.icon, color: khanGold, size: 25),
               ),
               const Spacer(),
-              const DemoDataBadge(compact: true, darkSurface: true),
+              if (unit.availableQuantity == 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'OUT OF STOCK',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 17),
@@ -108,7 +123,7 @@ class InvestmentUnitCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'ILLUSTRATIVE UNIT PRICE',
+                      'BUY PRICE',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Colors.white.withValues(alpha: 0.58),
                         fontSize: 8,
@@ -117,7 +132,7 @@ class InvestmentUnitCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      unit.priceLabel,
+                      unit.purchaseLabel,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: khanLightGold,
                         fontWeight: FontWeight.w700,
@@ -133,11 +148,21 @@ class InvestmentUnitCard extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            'Sell-back price: ${unit.buybackLabel}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.white.withValues(alpha: 0.76),
+            ),
+          ),
           const SizedBox(height: 15),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: onBuyTap,
+              onPressed:
+                  unit.availableQuantity > 0 && unit.purchaseMinor > 0
+                      ? onBuyTap
+                      : null,
               style: FilledButton.styleFrom(
                 backgroundColor: khanGold,
                 foregroundColor: khanDark,

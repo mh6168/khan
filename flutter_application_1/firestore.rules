@@ -36,5 +36,38 @@ service cloud.firestore {
         && resource.data.availability == 'available';
       allow write: if false;
     }
+
+    match /masterDealerInventory/{assetId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /masterDealerPrices/{documentId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /masterDealerPriceHistory/{documentId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /masterDealerTransactions/{transactionId} {
+      allow read: if request.auth != null
+        && resource.data.customerUid == request.auth.uid
+        && resource.data.status == 'completed';
+      allow write: if false;
+    }
+
+    match /masterDealerPurchaseOrders/{orderId} {
+      allow read: if request.auth != null
+        && resource.data.customerUid == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /customerPortfolios/{customerId} {
+      allow read: if request.auth != null && request.auth.uid == customerId;
+      allow write: if false;
+    }
   }
 }
