@@ -27,6 +27,7 @@ class PaymobService {
     required int amountMinor,
     required String merchantOrderId,
     required String email,
+    String? returnUrl,
   }) async {
     if (amountMinor <= 0) {
       throw ArgumentError.value(amountMinor, 'amountMinor');
@@ -82,6 +83,7 @@ class PaymobService {
       'integration_id': parsedIntegrationId,
     };
     final configuredRedirectUrl =
+        returnUrl ??
         redirectUrl ??
         (dotenv.isInitialized ? dotenv.env['PAYMOB_REDIRECT_URL'] : null) ??
         '';
@@ -115,7 +117,9 @@ class PaymobService {
     required int expectedAmountMinor,
   }) async {
     if (!RegExp(r'^\d+$').hasMatch(transactionId)) {
-      throw const PaymobException('Enter the Paymob transaction ID.');
+      throw const PaymobException(
+        'Paymob returned an invalid transaction reference.',
+      );
     }
     final token = await _authenticate(_config('PAYMOB_API_KEY', apiKey));
     final payment = await _request(
@@ -245,7 +249,9 @@ class PaymobService {
 
   String _appRedirectUrl(String configured) {
     final uri = Uri.tryParse(configured);
-    if (kIsWeb && uri?.host == 'localhost') return Uri.base.origin;
+    if (kIsWeb && uri?.host == 'localhost' && !uri!.hasPort) {
+      return Uri.base.replace(queryParameters: uri.queryParameters).toString();
+    }
     return configured;
   }
 

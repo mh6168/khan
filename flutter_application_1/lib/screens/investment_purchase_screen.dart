@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -30,13 +31,10 @@ class InvestmentPurchaseScreen extends StatefulWidget {
 class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
   late InvestmentUnit _selectedUnit;
   final _quantityController = TextEditingController();
-  final _transactionController = TextEditingController();
   final _service = InvestmentService();
   final _paymob = PaymobService();
   bool _loading = false;
   String? _orderId;
-  int? _orderAmountMinor;
-  String? _orderMerchantId;
   Uri? _checkoutUrl;
   _PaymentStatus _paymentStatus = _PaymentStatus.idle;
   String? _statusMessage;
@@ -50,7 +48,6 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
   @override
   void dispose() {
     _quantityController.dispose();
-    _transactionController.dispose();
     super.dispose();
   }
 
@@ -184,7 +181,6 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                   const SizedBox(height: 18),
                   _paymentStatusCard(context),
                   if (_checkoutUrl != null &&
-                      _paymentStatus != _PaymentStatus.paid &&
                       _paymentStatus != _PaymentStatus.cancelled) ...[
                     const SizedBox(height: 10),
                     OutlinedButton(
@@ -196,29 +192,7 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                       ),
                     ),
                   ],
-                  if (_checkoutUrl != null &&
-                      _paymentStatus != _PaymentStatus.ready &&
-                      _paymentStatus != _PaymentStatus.paid &&
-                      _paymentStatus != _PaymentStatus.cancelled) ...[
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _transactionController,
-                      enabled: !_loading,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        labelText: 'Paymob transaction ID',
-                        hintText: 'Enter the ID shown after checkout',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton(
-                      onPressed: _loading ? null : _verifyPayment,
-                      child: const Text('Verify payment'),
-                    ),
-                  ],
                   if (_orderId != null &&
-                      _paymentStatus != _PaymentStatus.paid &&
                       _paymentStatus != _PaymentStatus.cancelled) ...[
                     TextButton(
                       onPressed: _loading ? null : _cancelPurchase,
@@ -264,16 +238,6 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
         'Checkout ready',
         Colors.blue,
         Icons.open_in_new,
-      ),
-      _PaymentStatus.verifying => (
-        'Verifying payment with Paymob',
-        Colors.blue,
-        Icons.sync,
-      ),
-      _PaymentStatus.paid => (
-        'Payment verified',
-        Colors.green,
-        Icons.check_circle_outline,
       ),
       _PaymentStatus.failed => (
         'Payment not verified',
@@ -357,17 +321,15 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
       final merchantOrderId = 'khan-md-$orderId';
       setState(() {
         _orderId = orderId;
-        _orderAmountMinor = amountMinor;
-        _orderMerchantId = merchantOrderId;
         _checkoutUrl = null;
         _paymentStatus = _PaymentStatus.creating;
         _statusMessage = null;
-        _transactionController.clear();
       });
       final session = await _paymob.createCheckoutSession(
-        amountMinor: _orderAmountMinor!,
+        amountMinor: amountMinor,
         merchantOrderId: merchantOrderId,
         email: FirebaseAuth.instance.currentUser?.email ?? '',
+        returnUrl: kIsWeb ? _paymobReturnUrl(orderId) : null,
       );
       await _service.attachPaymobOrder(
         orderId: orderId,
@@ -381,8 +343,8 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
         _checkoutUrl = session.checkoutUrl;
         _paymentStatus = _PaymentStatus.ready;
         _statusMessage =
-            'Checkout is ready. Open it in a new tab, complete payment, then '
-            'return here and verify the Paymob transaction ID.';
+            'Checkout is ready. Open it in a new tab. Paymob will return to '
+            'KHAN and verify the payment automatically.';
       });
     } catch (error) {
       Object? cleanupError;
@@ -421,8 +383,8 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
             ? _PaymentStatus.pending
             : _PaymentStatus.failed;
         _statusMessage = opened
-            ? 'Complete checkout in the Paymob tab, return here, and enter '
-                  'the transaction ID shown by Paymob to verify it.'
+            ? 'Waiting for Paymob to return the payment result. Verification '
+                  'and portfolio updates happen automatically.'
             : 'Could not open the Paymob checkout page. Try opening it again.';
       });
     } catch (error) {
@@ -437,57 +399,20 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
     }
   }
 
-  Future<void> _verifyPayment() async {
-    final transactionId = _transactionController.text.trim();
-    if (_orderId == null || _orderMerchantId == null || transactionId.isEmpty) {
-      _showMessage('Enter the Paymob transaction ID.');
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _paymentStatus = _PaymentStatus.verifying;
-      _statusMessage = null;
-    });
-    try {
-      final result = await _paymob.verifyTransaction(
-        transactionId: transactionId,
-        expectedMerchantOrderId: _orderMerchantId!,
-        expectedAmountMinor: _orderAmountMinor!,
-      );
-      if (!mounted) return;
-      if (result.status == PaymobVerificationStatus.pending) {
-        setState(() {
-          _paymentStatus = _PaymentStatus.pending;
-          _statusMessage = 'Paymob still reports this payment as pending.';
-        });
-        return;
-      }
-      if (result.status == PaymobVerificationStatus.failed) {
-        setState(() {
-          _paymentStatus = _PaymentStatus.failed;
-          _statusMessage = 'Paymob did not report a successful payment.';
-        });
-        return;
-      }
-      await _service.completePurchase(
-        orderId: _orderId!,
-        payment: result.payment!,
-      );
-      if (!mounted) return;
-      setState(() {
-        _paymentStatus = _PaymentStatus.paid;
-        _statusMessage = 'Paymob confirmed this transaction and the demo portfolio was updated.';
-      });
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _paymentStatus = _PaymentStatus.failed;
-          _statusMessage = error.toString();
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  String _paymobReturnUrl(String orderId) {
+    final parameters = Map<String, String>.from(Uri.base.queryParameters)
+      ..removeWhere(
+        (key, _) => const {
+          'khan_order_id',
+          'id',
+          'transaction_id',
+          'txn_id',
+          'success',
+          'pending',
+        }.contains(key),
+      )
+      ..['khan_order_id'] = orderId;
+    return Uri.base.replace(queryParameters: parameters).toString();
   }
 
   Future<void> _cancelPurchase() async {
@@ -512,20 +437,6 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
 }
 
-enum _PaymentStatus {
-  idle,
-  creating,
-  ready,
-  pending,
-  verifying,
-  paid,
-  failed,
-  cancelled,
-}
+enum _PaymentStatus { idle, creating, ready, pending, failed, cancelled }

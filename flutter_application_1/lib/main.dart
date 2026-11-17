@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'firebase_options.dart';
 import 'screens/customer_home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/paymob_return_screen.dart';
 import 'widgets/khan_logo.dart';
 
 const _dark = Color(0xFF111618);
@@ -147,13 +148,22 @@ class AuthGate extends StatelessWidget {
           );
         }
         final user = snapshot.data;
-        return user == null
-            ? const LoginScreen()
-            : CustomerHomeScreen(
-                customerId: user.uid,
-                customerName: user.displayName,
-                customerEmail: user.email,
-              );
+        if (user == null) return const LoginScreen();
+
+        final callback = PaymobReturnData.fromUri(Uri.base);
+        if (callback != null) {
+          return PaymobReturnScreen(
+            callback: callback,
+            customerId: user.uid,
+            customerName: user.displayName,
+            customerEmail: user.email,
+          );
+        }
+        return CustomerHomeScreen(
+          customerId: user.uid,
+          customerName: user.displayName,
+          customerEmail: user.email,
+        );
       },
     );
   }

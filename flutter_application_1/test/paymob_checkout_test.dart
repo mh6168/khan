@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:flutter_application_1/data/investment_service.dart';
 import 'package:flutter_application_1/data/paymob_service.dart';
+import 'package:flutter_application_1/screens/paymob_return_screen.dart';
 
 void main() {
   group('PaymobService', () {
@@ -30,6 +32,7 @@ void main() {
         amountMinor: 12500,
         merchantOrderId: 'khan-md-order-1',
         email: 'customer@example.com',
+        returnUrl: 'https://demo.example/?khan_order_id=order-1',
       );
 
       expect(requests.map((request) => request.url.path), [
@@ -44,7 +47,10 @@ void main() {
       expect(paymentKey['order_id'], 456);
       expect(paymentKey['integration_id'], 1234);
       expect(paymentKey['expiration'], 900);
-      expect(paymentKey['redirection_url'], 'https://demo.example/return');
+      expect(
+        paymentKey['redirection_url'],
+        'https://demo.example/?khan_order_id=order-1',
+      );
       expect(session.paymobOrderId, '456');
       expect(
         session.checkoutUrl.toString(),
@@ -245,6 +251,194 @@ void main() {
         );
       },
     );
+  });
+
+  group('Paymob automatic return', () {
+    test('parses transaction data without trusting browser success flags', () {
+      final callback = PaymobReturnData.fromUri(
+        Uri.parse(
+          'https://demo.example/?khan_order_id=order_1&id=345&success=false',
+        ),
+      );
+
+      expect(callback?.orderId, 'order_1');
+      expect(callback?.transactionId, '345');
+      expect(callback?.wasCancelled, isFalse);
+    });
+
+    testWidgets('verifies payment and completes the purchase automatically', (
+      tester,
+    ) async {
+      final firestore = FakeFirebaseFirestore();
+      final investments = InvestmentService(
+        firestore: firestore,
+        currentUserId: () => 'customer-1',
+      );
+      await firestore.collection('masterDealerInventory').doc('lira').set({
+        'quantity': 8,
+        'reserved': 0,
+      });
+      final orderId = await investments.createPendingPurchase(
+        unit: 'lira',
+        quantity: 2,
+        unitPriceMinor: 12500,
+      );
+      final paymob = _paymob(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/auth/tokens')) {
+            return http.Response('{"token":"auth-token"}', 200);
+          }
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'pending': false,
+              'currency': 'EGP',
+              'amount_cents': 25000,
+              'order': {'merchant_order_id': 'khan-md-$orderId'},
+            }),
+            200,
+          );
+        }),
+      );
+      final callback = PaymobReturnData.fromUri(
+        Uri.parse(
+          'https://demo.example/?khan_order_id=$orderId&id=345&success=false',
+        ),
+      )!;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaymobReturnScreen(
+            callback: callback,
+            customerId: 'customer-1',
+            investmentService: investments,
+            paymobService: paymob,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Purchase successful'), findsNWidgets(2));
+      final portfolio =
+          (await firestore
+                  .collection('customerPortfolios')
+                  .doc('customer-1')
+                  .get())
+              .data()!;
+      expect(portfolio['liraQuantity'], 2);
+      expect(
+        (await firestore.collection('masterDealerTransactions').get()).docs,
+        hasLength(1),
+      );
+    });
+
+    testWidgets('failed verification releases inventory without crediting', (
+      tester,
+    ) async {
+      final firestore = FakeFirebaseFirestore();
+      final investments = InvestmentService(
+        firestore: firestore,
+        currentUserId: () => 'customer-1',
+      );
+      await firestore.collection('masterDealerInventory').doc('para').set({
+        'quantity': 8,
+        'reserved': 0,
+      });
+      final orderId = await investments.createPendingPurchase(
+        unit: 'para',
+        quantity: 2,
+        unitPriceMinor: 12500,
+      );
+      final paymob = _paymob(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/auth/tokens')) {
+            return http.Response('{"token":"auth-token"}', 200);
+          }
+          return http.Response('{"success":false,"pending":false}', 200);
+        }),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaymobReturnScreen(
+            callback: PaymobReturnData(
+              orderId: orderId,
+              transactionId: '345',
+              wasCancelled: false,
+            ),
+            customerId: 'customer-1',
+            investmentService: investments,
+            paymobService: paymob,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Payment not verified'), findsOneWidget);
+      expect(
+        (await firestore.collection('customerPortfolios').get()).docs,
+        isEmpty,
+      );
+      expect(
+        (await firestore.collection('masterDealerTransactions').get()).docs,
+        isEmpty,
+      );
+      final inventory =
+          (await firestore
+                  .collection('masterDealerInventory')
+                  .doc('para')
+                  .get())
+              .data()!;
+      expect(inventory['reserved'], 0);
+    });
+
+    testWidgets('cancelled callback releases its reservation without credit', (
+      tester,
+    ) async {
+      final firestore = FakeFirebaseFirestore();
+      final investments = InvestmentService(
+        firestore: firestore,
+        currentUserId: () => 'customer-1',
+      );
+      await firestore.collection('masterDealerInventory').doc('para').set({
+        'quantity': 8,
+        'reserved': 0,
+      });
+      final orderId = await investments.createPendingPurchase(
+        unit: 'para',
+        quantity: 1,
+        unitPriceMinor: 12500,
+      );
+      final callback = PaymobReturnData.fromUri(
+        Uri.parse(
+          'https://demo.example/?khan_order_id=$orderId&cancelled=true',
+        ),
+      )!;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaymobReturnScreen(
+            callback: callback,
+            customerId: 'customer-1',
+            investmentService: investments,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Purchase cancelled'), findsOneWidget);
+      expect(
+        (await firestore.collection('customerPortfolios').get()).docs,
+        isEmpty,
+      );
+      final inventory =
+          (await firestore
+                  .collection('masterDealerInventory')
+                  .doc('para')
+                  .get())
+              .data()!;
+      expect(inventory['reserved'], 0);
+    });
   });
 }
 

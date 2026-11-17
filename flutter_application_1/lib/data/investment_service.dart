@@ -4,6 +4,28 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'paymob_service.dart';
 import '../models/investment.dart';
 
+class InvestmentPurchaseOrder {
+  const InvestmentPurchaseOrder({
+    required this.id,
+    required this.unit,
+    required this.quantity,
+    required this.amountMinor,
+    required this.currency,
+    required this.merchantOrderId,
+    required this.status,
+    this.paymentTransactionId,
+  });
+
+  final String id;
+  final String unit;
+  final int quantity;
+  final int amountMinor;
+  final String currency;
+  final String merchantOrderId;
+  final String status;
+  final String? paymentTransactionId;
+}
+
 class InvestmentService {
   InvestmentService({
     FirebaseFirestore? firestore,
@@ -200,6 +222,43 @@ class InvestmentService {
     });
   }
 
+  Future<InvestmentPurchaseOrder> getPurchaseOrder(String orderId) async {
+    final uid = _requireUser();
+    final document = await firestore
+        .collection('masterDealerPurchaseOrders')
+        .doc(orderId)
+        .get();
+    final data = document.data();
+    if (data == null || data['customerUid'] != uid) {
+      throw StateError('Purchase order not found.');
+    }
+
+    final liraQuantity = _intValue(data['liraQuantity']);
+    final paraQuantity = _intValue(data['paraQuantity']);
+    if (liraQuantity < 0 ||
+        paraQuantity < 0 ||
+        (liraQuantity > 0) == (paraQuantity > 0)) {
+      throw StateError('Purchase order asset data is invalid.');
+    }
+    final amountMinor = _intValue(data['amountMinorUnits']);
+    final merchantOrderId = data['merchantOrderId']?.toString() ?? '';
+    if (amountMinor <= 0 ||
+        data['currency'] != 'EGP' ||
+        merchantOrderId.isEmpty) {
+      throw StateError('Purchase order payment data is invalid.');
+    }
+    return InvestmentPurchaseOrder(
+      id: document.id,
+      unit: liraQuantity > 0 ? 'lira' : 'para',
+      quantity: liraQuantity + paraQuantity,
+      amountMinor: amountMinor,
+      currency: data['currency']?.toString() ?? '',
+      merchantOrderId: merchantOrderId,
+      status: data['status']?.toString() ?? '',
+      paymentTransactionId: data['paymentTransactionId']?.toString(),
+    );
+  }
+
   Future<bool> completePurchase({
     required String orderId,
     required VerifiedPaymobPayment payment,
@@ -219,6 +278,7 @@ class InvestmentService {
           orderDocument.data()?['customerUid'] != uid) {
         throw StateError('Purchase order not found.');
       }
+
       final order = orderDocument.data()!;
       if (paymentDocument.exists) {
         final existing = paymentDocument.data()!;
