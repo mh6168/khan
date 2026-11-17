@@ -20,6 +20,18 @@ class InvestmentPrices {
   final int buybackMinor;
 }
 
+class InvestmentPriceSnapshot {
+  const InvestmentPriceSnapshot({
+    required this.lira,
+    required this.para,
+    required this.updatedAt,
+  });
+
+  final InvestmentPrices lira;
+  final InvestmentPrices para;
+  final DateTime updatedAt;
+}
+
 class InvestmentUnit {
   const InvestmentUnit({
     required this.name,
@@ -47,16 +59,20 @@ class InvestmentUnit {
   double get purchasePrice => purchaseMinor / 100;
   double get buybackPrice => buybackMinor / 100;
 
-  String get spotLabel => 'EGP ${spot.toStringAsFixed(2)}';
-  String get purchaseLabel => 'EGP ${purchasePrice.toStringAsFixed(2)}';
-  String get buybackLabel => 'EGP ${buybackPrice.toStringAsFixed(2)}';
+  String get spotLabel => formatEgpMinor(spotMinor);
+  String get purchaseLabel => formatEgpMinor(purchaseMinor);
+  String get buybackLabel => formatEgpMinor(buybackMinor);
+}
+
+String formatEgpMinor(int value) {
+  final whole = value ~/ 100;
+  final fraction = (value.abs() % 100).toString().padLeft(2, '0');
+  final sign = value < 0 ? '-' : '';
+  return 'EGP $sign$whole.$fraction';
 }
 
 class InvestmentPortfolio {
-  const InvestmentPortfolio({
-    this.liraQuantity = 0,
-    this.paraQuantity = 0,
-  });
+  const InvestmentPortfolio({this.liraQuantity = 0, this.paraQuantity = 0});
 
   final int liraQuantity;
   final int paraQuantity;

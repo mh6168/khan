@@ -49,7 +49,10 @@ class InvestmentUnitCard extends StatelessWidget {
               const Spacer(),
               if (unit.availableQuantity == 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
@@ -150,19 +153,23 @@ class InvestmentUnitCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
+            'Spot price: ${unit.spotLabel}',
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Colors.white.withValues(alpha: 0.76)),
+          ),
+          const SizedBox(height: 4),
+          Text(
             'Sell-back price: ${unit.buybackLabel}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.white.withValues(alpha: 0.76),
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Colors.white.withValues(alpha: 0.76)),
           ),
           const SizedBox(height: 15),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed:
-                  unit.availableQuantity > 0 && unit.purchaseMinor > 0
-                      ? onBuyTap
-                      : null,
+              onPressed: unit.availableQuantity > 0 && unit.purchaseMinor > 0
+                  ? onBuyTap
+                  : null,
               style: FilledButton.styleFrom(
                 backgroundColor: khanGold,
                 foregroundColor: khanDark,

@@ -47,7 +47,7 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
 
   int get _quantity => int.tryParse(_quantityController.text.trim()) ?? 0;
 
-  double get _total => _quantity * _selectedUnit.purchasePrice;
+  int get _totalMinor => _quantity * _selectedUnit.purchaseMinor;
 
   String? get _validationError {
     if (_quantity <= 0) return 'Enter a quantity greater than zero.';
@@ -77,16 +77,20 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                 const SizedBox(height: 22),
                 Text(
                   'Purchase precious metals',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: khanDark,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(color: khanDark, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 24),
                 SegmentedButton<InvestmentUnit>(
                   segments: [
-                    ButtonSegment(value: widget.lira, label: const Text('LIRA')),
-                    ButtonSegment(value: widget.para, label: const Text('PARA')),
+                    ButtonSegment(
+                      value: widget.lira,
+                      label: const Text('LIRA'),
+                    ),
+                    ButtonSegment(
+                      value: widget.para,
+                      label: const Text('PARA'),
+                    ),
                   ],
                   selected: {_selectedUnit},
                   onSelectionChanged: (selection) {
@@ -101,9 +105,7 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                   controller: _quantityController,
                   onChanged: (_) => setState(() {}),
                   keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                  ],
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
                     labelText: 'Quantity',
                     suffixText: _selectedUnit.name,
@@ -120,20 +122,26 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                   ),
                   child: Column(
                     children: [
-                      _priceRow(context, 'Buy price',
-                          _selectedUnit.purchaseLabel),
+                      _priceRow(
+                        context,
+                        'Buy price',
+                        _selectedUnit.purchaseLabel,
+                      ),
                       const SizedBox(height: 10),
-                      _priceRow(context, 'Sell-back price',
-                          _selectedUnit.buybackLabel),
+                      _priceRow(
+                        context,
+                        'Sell-back price',
+                        _selectedUnit.buybackLabel,
+                      ),
                       const SizedBox(height: 14),
                       Divider(color: Colors.white.withValues(alpha: 0.15)),
                       const SizedBox(height: 7),
-                      _priceRow(context, 'Total',
-                          'EGP ${_total.toStringAsFixed(2)}'),
+                      _priceRow(context, 'Total', formatEgpMinor(_totalMinor)),
                     ],
                   ),
                 ),
-                if (_validationError != null && _quantityController.text.isNotEmpty)
+                if (_validationError != null &&
+                    _quantityController.text.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 10),
                     child: Text(
@@ -162,9 +170,7 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                   TextField(
                     controller: _transactionController,
                     keyboardType: TextInputType.number,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                    ],
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: const InputDecoration(
                       labelText: 'Paymob transaction ID',
                       hintText: 'Enter the ID after checkout',
@@ -188,17 +194,16 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
     return Row(
       children: [
         Expanded(
-          child: Text(label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.74),
-                  )),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: Colors.white.withValues(alpha: 0.74)),
+          ),
         ),
         Text(
           value,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: khanLightGold,
-                fontWeight: FontWeight.w700,
-              ),
+          style: Theme.of(context).textTheme.titleSmall
+              ?.copyWith(color: khanLightGold, fontWeight: FontWeight.w700),
         ),
       ],
     );
@@ -215,10 +220,7 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
       setState(() => _orderId = result['orderId'] as String);
       final url = result['checkoutUrl'] as String?;
       if (url != null && await canLaunchUrl(Uri.parse(url))) {
-        await launchUrl(
-          Uri.parse(url),
-          mode: LaunchMode.externalApplication,
-        );
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       } else {
         _showMessage('The payment checkout could not be opened.');
       }
@@ -252,8 +254,7 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }

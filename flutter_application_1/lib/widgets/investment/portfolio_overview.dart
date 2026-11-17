@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 
 import '../../khan_colors.dart';
+import '../../models/investment.dart';
 
 class PortfolioOverview extends StatelessWidget {
   const PortfolioOverview({
     super.key,
     required this.liraQuantity,
     required this.paraQuantity,
-    required this.liraValue,
-    required this.paraValue,
+    required this.liraValueMinor,
+    required this.paraValueMinor,
   });
 
   final int liraQuantity;
   final int paraQuantity;
-  final double liraValue;
-  final double paraValue;
+  final int liraValueMinor;
+  final int paraValueMinor;
+
+  int get totalValueMinor => liraValueMinor + paraValueMinor;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +61,7 @@ class PortfolioOverview extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            'EGP ${(liraValue + paraValue).toStringAsFixed(2)}',
+            formatEgpMinor(totalValueMinor),
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               color: khanLightGold,
               fontWeight: FontWeight.w700,
@@ -92,13 +95,13 @@ class PortfolioOverview extends StatelessWidget {
           const SizedBox(height: 14),
           _PortfolioMetric(
             label: 'LIRA value',
-            value: 'EGP ${liraValue.toStringAsFixed(2)}',
+            value: formatEgpMinor(liraValueMinor),
             icon: Icons.trending_up,
           ),
           const SizedBox(height: 8),
           _PortfolioMetric(
             label: 'PARA value',
-            value: 'EGP ${paraValue.toStringAsFixed(2)}',
+            value: formatEgpMinor(paraValueMinor),
             icon: Icons.trending_up,
           ),
         ],
@@ -153,4 +156,3 @@ class _PortfolioMetric extends StatelessWidget {
     );
   }
 }
-
