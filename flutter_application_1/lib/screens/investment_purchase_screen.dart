@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/investment_service.dart';
+import '../data/paymob_service.dart';
 import '../khan_colors.dart';
 import '../models/investment.dart';
 import '../widgets/khan_logo.dart';
@@ -29,8 +32,14 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
   final _quantityController = TextEditingController();
   final _transactionController = TextEditingController();
   final _service = InvestmentService();
+  final _paymob = PaymobService();
   bool _loading = false;
   String? _orderId;
+  int? _orderAmountMinor;
+  String? _orderMerchantId;
+  Uri? _checkoutUrl;
+  _PaymentStatus _paymentStatus = _PaymentStatus.idle;
+  String? _statusMessage;
 
   @override
   void initState() {
@@ -48,6 +57,8 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
   int get _quantity => int.tryParse(_quantityController.text.trim()) ?? 0;
 
   int get _totalMinor => _quantity * _selectedUnit.purchaseMinor;
+  bool get _hasOpenOrder =>
+      _orderId != null && _paymentStatus != _PaymentStatus.cancelled;
 
   String? get _validationError {
     if (_quantity <= 0) return 'Enter a quantity greater than zero.';
@@ -93,17 +104,19 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                     ),
                   ],
                   selected: {_selectedUnit},
-                  onSelectionChanged: (selection) {
-                    setState(() {
-                      _selectedUnit = selection.first;
-                      _orderId = null;
-                    });
-                  },
+                  onSelectionChanged: _loading || _hasOpenOrder
+                      ? null
+                      : (selection) {
+                          setState(() {
+                            _selectedUnit = selection.first;
+                          });
+                        },
                 ),
                 const SizedBox(height: 22),
                 TextField(
                   controller: _quantityController,
                   onChanged: (_) => setState(() {}),
+                  enabled: !_loading && !_hasOpenOrder,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
@@ -153,7 +166,8 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                 SizedBox(
                   height: 54,
                   child: FilledButton(
-                    onPressed: _loading || _validationError != null
+                    onPressed:
+                        _loading || _validationError != null || _hasOpenOrder
                         ? null
                         : _continueToPaymob,
                     style: FilledButton.styleFrom(
@@ -162,30 +176,144 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
                     ),
                     child: _loading
                         ? const CircularProgressIndicator()
-                        : const Text('Continue to Paymob'),
+                        : const Text('Create Paymob checkout'),
                   ),
                 ),
-                if (_orderId != null) ...[
+                if (_orderId != null ||
+                    _paymentStatus == _PaymentStatus.failed) ...[
                   const SizedBox(height: 18),
-                  TextField(
-                    controller: _transactionController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'Paymob transaction ID',
-                      hintText: 'Enter the ID after checkout',
+                  _paymentStatusCard(context),
+                  if (_checkoutUrl != null &&
+                      _paymentStatus != _PaymentStatus.paid &&
+                      _paymentStatus != _PaymentStatus.cancelled) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: _loading ? null : _openCheckout,
+                      child: Text(
+                        _paymentStatus == _PaymentStatus.pending
+                            ? 'Open Paymob checkout again'
+                            : 'Open Paymob checkout',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton(
-                    onPressed: _loading ? null : _confirmPayment,
-                    child: const Text('Confirm successful payment'),
-                  ),
+                  ],
+                  if (_checkoutUrl != null &&
+                      _paymentStatus != _PaymentStatus.ready &&
+                      _paymentStatus != _PaymentStatus.paid &&
+                      _paymentStatus != _PaymentStatus.cancelled) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _transactionController,
+                      enabled: !_loading,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: const InputDecoration(
+                        labelText: 'Paymob transaction ID',
+                        hintText: 'Enter the ID shown after checkout',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: _loading ? null : _verifyPayment,
+                      child: const Text('Verify payment'),
+                    ),
+                  ],
+                  if (_orderId != null &&
+                      _paymentStatus != _PaymentStatus.paid &&
+                      _paymentStatus != _PaymentStatus.cancelled) ...[
+                    TextButton(
+                      onPressed: _loading ? null : _cancelPurchase,
+                      child: const Text('Cancel this purchase'),
+                    ),
+                  ],
                 ],
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'DEMO ONLY: Paymob credentials are used by this client app '
+                    'and checkout records are client-writable. Do not use for '
+                    'real payments or deploy publicly.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _paymentStatusCard(BuildContext context) {
+    final (label, color, icon) = switch (_paymentStatus) {
+      _PaymentStatus.creating => (
+        'Creating Paymob checkout',
+        Colors.blue,
+        Icons.hourglass_top,
+      ),
+      _PaymentStatus.pending => (
+        'Payment pending',
+        Colors.orange,
+        Icons.pending_outlined,
+      ),
+      _PaymentStatus.ready => (
+        'Checkout ready',
+        Colors.blue,
+        Icons.open_in_new,
+      ),
+      _PaymentStatus.verifying => (
+        'Verifying payment with Paymob',
+        Colors.blue,
+        Icons.sync,
+      ),
+      _PaymentStatus.paid => (
+        'Payment verified',
+        Colors.green,
+        Icons.check_circle_outline,
+      ),
+      _PaymentStatus.failed => (
+        'Payment not verified',
+        Colors.red,
+        Icons.error_outline,
+      ),
+      _PaymentStatus.cancelled => (
+        'Purchase cancelled',
+        Colors.grey,
+        Icons.cancel_outlined,
+      ),
+      _PaymentStatus.idle => ('Payment not started', Colors.grey, Icons.info),
+    };
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                ),
+                if (_statusMessage != null) ...[
+                  const SizedBox(height: 4),
+                  Text(_statusMessage!),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -210,44 +338,176 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
   }
 
   Future<void> _continueToPaymob() async {
+    final unit = _selectedUnit.name.toLowerCase();
+    final quantity = _quantity;
+    final unitPriceMinor = _selectedUnit.purchaseMinor;
+    final amountMinor = quantity * unitPriceMinor;
     setState(() => _loading = true);
+    String? orderId;
     try {
-      final result = await _service.createPurchase(
-        unit: _selectedUnit.name.toLowerCase(),
-        quantity: _quantity,
+      orderId = await _service.createPendingPurchase(
+        unit: unit,
+        quantity: quantity,
+        unitPriceMinor: unitPriceMinor,
       );
-      if (!mounted) return;
-      setState(() => _orderId = result['orderId'] as String);
-      final url = result['checkoutUrl'] as String?;
-      if (url != null && await canLaunchUrl(Uri.parse(url))) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      } else {
-        _showMessage('The payment checkout could not be opened.');
+      if (!mounted) {
+        await _service.cancelPurchase(orderId);
+        return;
       }
+      final merchantOrderId = 'khan-md-$orderId';
+      setState(() {
+        _orderId = orderId;
+        _orderAmountMinor = amountMinor;
+        _orderMerchantId = merchantOrderId;
+        _checkoutUrl = null;
+        _paymentStatus = _PaymentStatus.creating;
+        _statusMessage = null;
+        _transactionController.clear();
+      });
+      final session = await _paymob.createCheckoutSession(
+        amountMinor: _orderAmountMinor!,
+        merchantOrderId: merchantOrderId,
+        email: FirebaseAuth.instance.currentUser?.email ?? '',
+      );
+      await _service.attachPaymobOrder(
+        orderId: orderId,
+        paymobOrderId: session.paymobOrderId,
+      );
+      if (!mounted) {
+        await _service.cancelPurchase(orderId);
+        return;
+      }
+      setState(() {
+        _checkoutUrl = session.checkoutUrl;
+        _paymentStatus = _PaymentStatus.ready;
+        _statusMessage =
+            'Checkout is ready. Open it in a new tab, complete payment, then '
+            'return here and verify the Paymob transaction ID.';
+      });
     } catch (error) {
-      if (mounted) _showMessage(error.toString());
+      Object? cleanupError;
+      if (orderId != null) {
+        try {
+          await _service.cancelPurchase(orderId);
+        } catch (cleanupFailure) {
+          cleanupError = cleanupFailure;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _paymentStatus = _PaymentStatus.failed;
+          _statusMessage = cleanupError == null
+              ? error.toString()
+              : '$error; reservation cleanup also failed: $cleanupError';
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _confirmPayment() async {
+  Future<void> _openCheckout() async {
+    final checkoutUrl = _checkoutUrl;
+    if (checkoutUrl == null) return;
+    setState(() => _loading = true);
+    try {
+      final opened = await launchUrl(
+        checkoutUrl,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!mounted) return;
+      setState(() {
+        _paymentStatus = opened
+            ? _PaymentStatus.pending
+            : _PaymentStatus.failed;
+        _statusMessage = opened
+            ? 'Complete checkout in the Paymob tab, return here, and enter '
+                  'the transaction ID shown by Paymob to verify it.'
+            : 'Could not open the Paymob checkout page. Try opening it again.';
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _paymentStatus = _PaymentStatus.failed;
+          _statusMessage = error.toString();
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _verifyPayment() async {
     final transactionId = _transactionController.text.trim();
-    if (_orderId == null || transactionId.isEmpty) {
+    if (_orderId == null || _orderMerchantId == null || transactionId.isEmpty) {
       _showMessage('Enter the Paymob transaction ID.');
       return;
     }
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _paymentStatus = _PaymentStatus.verifying;
+      _statusMessage = null;
+    });
     try {
-      await _service.confirmPurchase(
-        orderId: _orderId!,
-        paymobTransactionId: transactionId,
+      final result = await _paymob.verifyTransaction(
+        transactionId: transactionId,
+        expectedMerchantOrderId: _orderMerchantId!,
+        expectedAmountMinor: _orderAmountMinor!,
       );
       if (!mounted) return;
-      _showMessage('Payment verified. Your portfolio is updated.');
-      Navigator.of(context).pop();
+      if (result.status == PaymobVerificationStatus.pending) {
+        setState(() {
+          _paymentStatus = _PaymentStatus.pending;
+          _statusMessage = 'Paymob still reports this payment as pending.';
+        });
+        return;
+      }
+      if (result.status == PaymobVerificationStatus.failed) {
+        setState(() {
+          _paymentStatus = _PaymentStatus.failed;
+          _statusMessage = 'Paymob did not report a successful payment.';
+        });
+        return;
+      }
+      await _service.completePurchase(
+        orderId: _orderId!,
+        payment: result.payment!,
+      );
+      if (!mounted) return;
+      setState(() {
+        _paymentStatus = _PaymentStatus.paid;
+        _statusMessage = 'Paymob confirmed this transaction and the demo portfolio was updated.';
+      });
     } catch (error) {
-      if (mounted) _showMessage(error.toString());
+      if (mounted) {
+        setState(() {
+          _paymentStatus = _PaymentStatus.failed;
+          _statusMessage = error.toString();
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _cancelPurchase() async {
+    final orderId = _orderId;
+    if (orderId == null) return;
+    setState(() => _loading = true);
+    try {
+      await _service.cancelPurchase(orderId);
+      if (!mounted) return;
+      setState(() {
+        _paymentStatus = _PaymentStatus.cancelled;
+        _statusMessage = 'The pending inventory reservation was released.';
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _paymentStatus = _PaymentStatus.failed;
+          _statusMessage = error.toString();
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -257,4 +517,15 @@ class _InvestmentPurchaseScreenState extends State<InvestmentPurchaseScreen> {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
+}
+
+enum _PaymentStatus {
+  idle,
+  creating,
+  ready,
+  pending,
+  verifying,
+  paid,
+  failed,
+  cancelled,
 }

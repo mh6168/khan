@@ -39,7 +39,19 @@ service cloud.firestore {
 
     match /masterDealerInventory/{assetId} {
       allow read: if request.auth != null;
-      allow write: if false;
+      // Client writes are enabled only for the university demo checkout.
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'quantity',
+          'reserved',
+          'updatedAt'
+        ])
+        && request.resource.data.quantity is int
+        && request.resource.data.reserved is int
+        && request.resource.data.quantity >= 0
+        && request.resource.data.quantity <= resource.data.quantity
+        && request.resource.data.reserved >= 0
+        && request.resource.data.reserved <= request.resource.data.quantity;
     }
 
     match /masterDealerPrices/{documentId} {
@@ -56,18 +68,77 @@ service cloud.firestore {
       allow read: if request.auth != null
         && resource.data.customerUid == request.auth.uid
         && resource.data.status == 'completed';
-      allow write: if false;
+      allow create: if request.auth != null
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.type == 'customer_purchase'
+        && request.resource.data.status == 'completed'
+        && request.resource.data.source == 'paymob'
+        && request.resource.data.keys().hasOnly([
+          'type',
+          'status',
+          'source',
+          'customerUid',
+          'purchaseOrderId',
+          'paymentTransactionId',
+          'liraQuantity',
+          'paraQuantity',
+          'liraUnitPriceMinor',
+          'paraUnitPriceMinor',
+          'amountMinorUnits',
+          'createdAt'
+        ]);
     }
 
     match /masterDealerPurchaseOrders/{orderId} {
       allow read: if request.auth != null
         && resource.data.customerUid == request.auth.uid;
-      allow write: if false;
+      allow create: if request.auth != null
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly([
+          'customerUid',
+          'liraQuantity',
+          'paraQuantity',
+          'liraUnitPriceMinor',
+          'paraUnitPriceMinor',
+          'amountMinorUnits',
+          'currency',
+          'status',
+          'createdAt',
+          'expiresAt',
+          'merchantOrderId'
+        ]);
+      allow update: if request.auth != null
+        && resource.data.customerUid == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.customerUid == resource.data.customerUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'paymobOrderId',
+          'status',
+          'paymentTransactionId',
+          'paidAt',
+          'cancelledAt'
+        ])
+        && (
+          request.resource.data.status == 'pending'
+          || request.resource.data.status == 'completed'
+          || request.resource.data.status == 'cancelled'
+        );
     }
 
     match /customerPortfolios/{customerId} {
       allow read: if request.auth != null && request.auth.uid == customerId;
-      allow write: if false;
+      allow create, update: if request.auth != null
+        && request.auth.uid == customerId
+        && request.resource.data.keys().hasOnly([
+          'liraQuantity',
+          'paraQuantity',
+          'updatedAt'
+        ])
+        && request.resource.data.liraQuantity is int
+        && request.resource.data.paraQuantity is int
+        && request.resource.data.liraQuantity >= 0
+        && request.resource.data.paraQuantity >= 0;
     }
   }
 }

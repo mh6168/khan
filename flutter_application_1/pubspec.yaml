@@ -40,7 +40,6 @@ dependencies:
   flutter_dotenv: ^5.2.1
   http: ^1.2.2
   url_launcher: ^6.3.1
-  cloud_functions: ^6.5.1
 
 dev_dependencies:
   flutter_test:
@@ -52,6 +51,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  fake_cloud_firestore: ^4.4.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
