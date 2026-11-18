@@ -142,7 +142,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 customerName,
                 profileLoadFailed,
               ),
-              1 => InvestScreen(header: _buildHeader(customerName)),
+              1 => InvestScreen(
+                header: _buildHeader(customerName),
+                customerName: customerName,
+                customerEmail: customerProfile?.email ?? widget.customerEmail,
+                customerPhone: customerProfile?.phone,
+              ),
               2 => FavoritesScreen(
                 header: _buildHeader(customerName),
                 products: _loadedProducts

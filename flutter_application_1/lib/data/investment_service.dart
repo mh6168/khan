@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'paymob_service.dart';
 import '../models/investment.dart';
+import '../models/investment_sell_request.dart';
 
 class InvestmentPurchaseOrder {
   const InvestmentPurchaseOrder({
@@ -57,29 +58,269 @@ class InvestmentService {
       return Stream.value(const InvestmentPortfolio());
     }
 
+    return firestore.collection('customerPortfolios').doc(uid).snapshots().map((
+      snapshot,
+    ) {
+      final data = snapshot.data() ?? const <String, dynamic>{};
+      final lira =
+          _intValue(data['liraQuantity']) -
+          _intValue(data['reservedLiraQuantity']);
+      final para =
+          _intValue(data['paraQuantity']) -
+          _intValue(data['reservedParaQuantity']);
+      return InvestmentPortfolio(
+        liraQuantity: lira < 0 ? 0 : lira,
+        paraQuantity: para < 0 ? 0 : para,
+      );
+    });
+  }
+
+  Stream<List<InvestmentSellRequest>> watchCustomerSellRequests() {
+    final uid = _currentUserId();
+    if (uid == null) return Stream.value(const []);
     return firestore
-        .collection('masterDealerTransactions')
+        .collection('masterDealerSellRequests')
         .where('customerUid', isEqualTo: uid)
-        .where('status', isEqualTo: 'completed')
         .snapshots()
-        .map((snapshot) {
-          var lira = 0;
-          var para = 0;
-          for (final document in snapshot.docs) {
-            final data = document.data();
-            final type = data['type'];
-            if (type != 'customer_purchase' && type != 'customer_buyback') {
-              continue;
-            }
-            final direction = type == 'customer_purchase' ? 1 : -1;
-            lira += direction * _intValue(data['liraQuantity']);
-            para += direction * _intValue(data['paraQuantity']);
-          }
-          return InvestmentPortfolio(
-            liraQuantity: lira < 0 ? 0 : lira,
-            paraQuantity: para < 0 ? 0 : para,
-          );
+        .map(_sortedSellRequests);
+  }
+
+  Stream<List<InvestmentSellRequest>> watchMasterDealerSellRequests() {
+    _requireUser();
+    return firestore
+        .collection('masterDealerSellRequests')
+        .snapshots()
+        .map(_sortedSellRequests);
+  }
+
+  Future<String> createSellRequest({
+    required int liraQuantity,
+    required int paraQuantity,
+    required String instapayPhone,
+    required int liraUnitPriceMinor,
+    required int paraUnitPriceMinor,
+    required String customerName,
+    required String customerEmail,
+    required String customerPhone,
+  }) async {
+    final uid = _requireUser();
+    final normalizedPhone = normalizeEgyptianMobile(instapayPhone);
+    if (normalizedPhone == null) {
+      throw ArgumentError('Enter a valid Egyptian mobile number.');
+    }
+    if (liraQuantity < 0 ||
+        paraQuantity < 0 ||
+        liraQuantity > 10000 ||
+        paraQuantity > 10000 ||
+        (liraQuantity == 0 && paraQuantity == 0)) {
+      throw ArgumentError('Enter a positive quantity for at least one asset.');
+    }
+    if (liraUnitPriceMinor <= 0 || paraUnitPriceMinor <= 0) {
+      throw ArgumentError('Current sellback prices are unavailable.');
+    }
+
+    final requestRef = firestore.collection('masterDealerSellRequests').doc();
+    final portfolioRef = firestore.collection('customerPortfolios').doc(uid);
+    final totalPayoutMinor =
+        liraQuantity * liraUnitPriceMinor + paraQuantity * paraUnitPriceMinor;
+
+    await firestore.runTransaction((transaction) async {
+      final portfolioDocument = await transaction.get(portfolioRef);
+      if (!portfolioDocument.exists) {
+        throw StateError('No investment holdings are available to sell.');
+      }
+      final portfolio = portfolioDocument.data()!;
+      final liraAvailable =
+          _intValue(portfolio['liraQuantity']) -
+          _intValue(portfolio['reservedLiraQuantity']);
+      final paraAvailable =
+          _intValue(portfolio['paraQuantity']) -
+          _intValue(portfolio['reservedParaQuantity']);
+      if (liraQuantity > liraAvailable || paraQuantity > paraAvailable) {
+        throw StateError(
+          'The requested quantity exceeds your available holdings.',
+        );
+      }
+
+      transaction.set(requestRef, {
+        'customerUid': uid,
+        'customerName': customerName.trim(),
+        'customerEmail': customerEmail.trim(),
+        'customerPhone': customerPhone.trim(),
+        'instapayPhone': normalizedPhone,
+        'liraQuantity': liraQuantity,
+        'paraQuantity': paraQuantity,
+        'liraUnitPriceMinor': liraUnitPriceMinor,
+        'paraUnitPriceMinor': paraUnitPriceMinor,
+        'totalPayoutMinor': totalPayoutMinor,
+        'currency': 'EGP',
+        'status': 'processing',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.update(portfolioRef, {
+        'reservedLiraQuantity':
+            _intValue(portfolio['reservedLiraQuantity']) + liraQuantity,
+        'reservedParaQuantity':
+            _intValue(portfolio['reservedParaQuantity']) + paraQuantity,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+    return requestRef.id;
+  }
+
+  Future<bool> markSellRequestMoneyTransferred(String requestId) async {
+    final dealerUid = _requireUser();
+    final requestRef = firestore
+        .collection('masterDealerSellRequests')
+        .doc(requestId);
+    final transactionRef = firestore
+        .collection('masterDealerTransactions')
+        .doc('buyback-$requestId');
+
+    return firestore.runTransaction((transaction) async {
+      final requestDocument = await transaction.get(requestRef);
+      if (!requestDocument.exists) {
+        throw StateError('Buyback request not found.');
+      }
+      final request = requestDocument.data()!;
+      if (request['status'] == 'money_transferred') return false;
+      if (request['status'] != 'processing') {
+        throw StateError('Buyback request is not awaiting transfer.');
+      }
+
+      final customerUid = request['customerUid']?.toString() ?? '';
+      final liraQuantity = _intValue(request['liraQuantity']);
+      final paraQuantity = _intValue(request['paraQuantity']);
+      if (customerUid.isEmpty ||
+          liraQuantity < 0 ||
+          paraQuantity < 0 ||
+          liraQuantity > 10000 ||
+          paraQuantity > 10000 ||
+          (liraQuantity == 0 && paraQuantity == 0)) {
+        throw StateError('Buyback request data is invalid.');
+      }
+      final liraUnitPriceMinor = _intValue(request['liraUnitPriceMinor']);
+      final paraUnitPriceMinor = _intValue(request['paraUnitPriceMinor']);
+      final totalPayoutMinor = _intValue(request['totalPayoutMinor']);
+      if (liraUnitPriceMinor <= 0 ||
+          paraUnitPriceMinor <= 0 ||
+          request['currency'] != 'EGP' ||
+          totalPayoutMinor !=
+              liraQuantity * liraUnitPriceMinor +
+                  paraQuantity * paraUnitPriceMinor) {
+        throw StateError('Buyback quote data is invalid.');
+      }
+
+      final portfolioRef = firestore
+          .collection('customerPortfolios')
+          .doc(customerUid);
+      final liraInventoryRef = firestore
+          .collection('masterDealerInventory')
+          .doc('lira');
+      final paraInventoryRef = firestore
+          .collection('masterDealerInventory')
+          .doc('para');
+      final portfolioDocument = await transaction.get(portfolioRef);
+      final liraInventoryDocument = await transaction.get(liraInventoryRef);
+      final paraInventoryDocument = await transaction.get(paraInventoryRef);
+      final transactionDocument = await transaction.get(transactionRef);
+
+      if (!portfolioDocument.exists ||
+          (liraQuantity > 0 && !liraInventoryDocument.exists) ||
+          (paraQuantity > 0 && !paraInventoryDocument.exists)) {
+        throw StateError(
+          'Portfolio or Master Dealer inventory is unavailable.',
+        );
+      }
+      if (transactionDocument.exists) {
+        throw StateError('This buyback request was already recorded.');
+      }
+
+      final portfolio = portfolioDocument.data()!;
+      final liraHeld = _intValue(portfolio['liraQuantity']);
+      final paraHeld = _intValue(portfolio['paraQuantity']);
+      final liraReserved = _intValue(portfolio['reservedLiraQuantity']);
+      final paraReserved = _intValue(portfolio['reservedParaQuantity']);
+      if (liraHeld < liraQuantity ||
+          paraHeld < paraQuantity ||
+          liraReserved < liraQuantity ||
+          paraReserved < paraQuantity) {
+        throw StateError(
+          'Reserved customer holdings do not match this request.',
+        );
+      }
+
+      final now = FieldValue.serverTimestamp();
+      transaction.update(portfolioRef, {
+        'liraQuantity': liraHeld - liraQuantity,
+        'paraQuantity': paraHeld - paraQuantity,
+        'reservedLiraQuantity': liraReserved - liraQuantity,
+        'reservedParaQuantity': paraReserved - paraQuantity,
+        'updatedAt': now,
+      });
+      if (liraQuantity > 0) {
+        final inventory = liraInventoryDocument.data()!;
+        transaction.update(liraInventoryRef, {
+          'quantity': _intValue(inventory['quantity']) + liraQuantity,
+          'updatedAt': now,
         });
+      }
+      if (paraQuantity > 0) {
+        final inventory = paraInventoryDocument.data()!;
+        transaction.update(paraInventoryRef, {
+          'quantity': _intValue(inventory['quantity']) + paraQuantity,
+          'updatedAt': now,
+        });
+      }
+      transaction.update(requestRef, {
+        'status': 'money_transferred',
+        'transferredAt': now,
+        'transferredBy': dealerUid,
+      });
+      transaction.set(transactionRef, {
+        'type': 'customer_buyback',
+        'status': 'completed',
+        'source': 'instapay',
+        'customerUid': customerUid,
+        'buybackRequestId': requestId,
+        'liraQuantity': liraQuantity,
+        'paraQuantity': paraQuantity,
+        'liraUnitPriceMinor': liraUnitPriceMinor,
+        'paraUnitPriceMinor': paraUnitPriceMinor,
+        'amountMinorUnits': totalPayoutMinor,
+        'createdAt': now,
+        'confirmedAt': now,
+      });
+      return true;
+    });
+  }
+
+  static String? normalizeEgyptianMobile(String value) {
+    final compact = value.trim().replaceAll(RegExp(r'[\s()-]'), '');
+    if (!RegExp(r'^\+?\d+$').hasMatch(compact)) return null;
+    var digits = compact.startsWith('+') ? compact.substring(1) : compact;
+    if (digits.startsWith('0020')) {
+      digits = '0${digits.substring(4)}';
+    } else if (digits.startsWith('20') && digits.length == 12) {
+      digits = '0${digits.substring(2)}';
+    }
+    if (RegExp(r'^01[0125]\d{8}$').hasMatch(digits)) return digits;
+    return null;
+  }
+
+  List<InvestmentSellRequest> _sortedSellRequests(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final requests = snapshot.docs
+        .map(InvestmentSellRequest.fromDocument)
+        .toList();
+    requests.sort(
+      (left, right) =>
+          (right.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(
+            left.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+    );
+    return requests;
   }
 
   Stream<List<InvestmentActivity>> watchActivity() {
@@ -98,7 +339,7 @@ class InvestmentService {
                 return type == 'customer_purchase' ||
                     type == 'customer_buyback';
               })
-              .map((document) {
+              .expand((document) {
                 final data = document.data();
                 final created = data['createdAt'];
                 DateTime? date;
@@ -109,14 +350,24 @@ class InvestmentService {
                     : 'Purchase';
                 final lira = _intValue(data['liraQuantity']);
                 final para = _intValue(data['paraQuantity']);
-                final isLira = lira > 0;
-                return InvestmentActivity(
-                  unit: isLira ? 'LIRA' : 'PARA',
-                  type: type,
-                  date: date,
-                  quantity: isLira ? lira : para,
-                  status: 'Completed',
-                );
+                return [
+                  if (lira > 0)
+                    InvestmentActivity(
+                      unit: 'LIRA',
+                      type: type,
+                      date: date,
+                      quantity: lira,
+                      status: 'Completed',
+                    ),
+                  if (para > 0)
+                    InvestmentActivity(
+                      unit: 'PARA',
+                      type: type,
+                      date: date,
+                      quantity: para,
+                      status: 'Completed',
+                    ),
+                ];
               })
               .toList();
           entries.sort(

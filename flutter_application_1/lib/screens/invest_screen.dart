@@ -10,12 +10,22 @@ import '../widgets/investment/para_card.dart';
 import '../widgets/investment/performance_chart.dart';
 import '../widgets/investment/portfolio_overview.dart';
 import '../widgets/investment/recent_activity.dart';
+import '../widgets/investment/sell_investment_section.dart';
 import 'investment_purchase_screen.dart';
 
 class InvestScreen extends StatefulWidget {
-  const InvestScreen({super.key, required this.header});
+  const InvestScreen({
+    super.key,
+    required this.header,
+    this.customerName,
+    this.customerEmail,
+    this.customerPhone,
+  });
 
   final Widget header;
+  final String? customerName;
+  final String? customerEmail;
+  final String? customerPhone;
 
   @override
   State<InvestScreen> createState() => _InvestScreenState();
@@ -164,6 +174,8 @@ class _InvestScreenState extends State<InvestScreen> {
                       history: history,
                       activities: activities,
                       priceUpdatedAt: prices.updatedAt,
+                      liraPrices: prices.lira,
+                      paraPrices: prices.para,
                     );
                   },
                 );
@@ -219,6 +231,8 @@ class _InvestScreenState extends State<InvestScreen> {
     required List<double> history,
     required List<InvestmentActivity> activities,
     required DateTime priceUpdatedAt,
+    required InvestmentPrices liraPrices,
+    required InvestmentPrices paraPrices,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -267,6 +281,16 @@ class _InvestScreenState extends State<InvestScreen> {
                       paraQuantity: portfolio.paraQuantity,
                       liraValueMinor: liraValueMinor,
                       paraValueMinor: paraValueMinor,
+                    ),
+                    const SizedBox(height: 28),
+                    SellInvestmentSection(
+                      service: _service,
+                      portfolio: portfolio,
+                      liraPrices: liraPrices,
+                      paraPrices: paraPrices,
+                      customerName: widget.customerName ?? '',
+                      customerEmail: widget.customerEmail ?? '',
+                      customerPhone: widget.customerPhone ?? '',
                     ),
                     const SizedBox(height: 28),
                     const HomeSectionHeading(

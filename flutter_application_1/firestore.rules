@@ -2,6 +2,13 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isMasterDealer() {
+      return request.auth != null
+        && get(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        ).data.role == 'masterDealer';
+    }
+
     match /users/{userId} {
       allow create: if request.auth != null
         && request.auth.uid == userId
@@ -39,7 +46,7 @@ service cloud.firestore {
 
     match /masterDealerInventory/{assetId} {
       allow read: if request.auth != null;
-      // Client writes are enabled only for the university demo checkout.
+      // Client writes support the Spark-plan investment demo workflows.
       allow update: if request.auth != null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'quantity',
@@ -49,9 +56,16 @@ service cloud.firestore {
         && request.resource.data.quantity is int
         && request.resource.data.reserved is int
         && request.resource.data.quantity >= 0
-        && request.resource.data.quantity <= resource.data.quantity
         && request.resource.data.reserved >= 0
-        && request.resource.data.reserved <= request.resource.data.quantity;
+        && request.resource.data.reserved <= request.resource.data.quantity
+        && (
+          (
+            isMasterDealer()
+            && request.resource.data.quantity >= resource.data.quantity
+            && request.resource.data.reserved == resource.data.reserved
+          )
+          || request.resource.data.quantity <= resource.data.quantity
+        );
     }
 
     match /masterDealerPrices/{documentId} {
@@ -66,9 +80,13 @@ service cloud.firestore {
 
     match /masterDealerTransactions/{transactionId} {
       allow read: if request.auth != null
-        && resource.data.customerUid == request.auth.uid
-        && resource.data.status == 'completed';
-      allow create: if request.auth != null
+        && resource.data.status == 'completed'
+        && (
+          resource.data.customerUid == request.auth.uid
+          || isMasterDealer()
+        );
+      allow create: if (
+        request.auth != null
         && request.resource.data.customerUid == request.auth.uid
         && request.resource.data.type == 'customer_purchase'
         && request.resource.data.status == 'completed'
@@ -86,7 +104,89 @@ service cloud.firestore {
           'paraUnitPriceMinor',
           'amountMinorUnits',
           'createdAt'
+        ])
+      ) || (
+        isMasterDealer()
+        && request.resource.data.type == 'customer_buyback'
+        && request.resource.data.status == 'completed'
+        && request.resource.data.source == 'instapay'
+        && request.resource.data.keys().hasOnly([
+          'type',
+          'status',
+          'source',
+          'customerUid',
+          'buybackRequestId',
+          'liraQuantity',
+          'paraQuantity',
+          'liraUnitPriceMinor',
+          'paraUnitPriceMinor',
+          'amountMinorUnits',
+          'createdAt',
+          'confirmedAt'
+        ])
+      );
+    }
+
+    match /masterDealerSellRequests/{requestId} {
+      allow read: if request.auth != null
+        && (
+          resource.data.customerUid == request.auth.uid
+          || isMasterDealer()
+        );
+      allow create: if request.auth != null
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'customerUid',
+          'customerName',
+          'customerEmail',
+          'customerPhone',
+          'instapayPhone',
+          'liraQuantity',
+          'paraQuantity',
+          'liraUnitPriceMinor',
+          'paraUnitPriceMinor',
+          'totalPayoutMinor',
+          'currency',
+          'status',
+          'createdAt'
+        ])
+        && request.resource.data.customerName is string
+        && request.resource.data.customerEmail is string
+        && request.resource.data.customerPhone is string
+        && request.resource.data.instapayPhone.matches('^01[0125][0-9]{8}$')
+        && request.resource.data.liraQuantity is int
+        && request.resource.data.paraQuantity is int
+        && request.resource.data.liraQuantity >= 0
+        && request.resource.data.paraQuantity >= 0
+        && request.resource.data.liraQuantity <= 10000
+        && request.resource.data.paraQuantity <= 10000
+        && (
+          request.resource.data.liraQuantity > 0
+          || request.resource.data.paraQuantity > 0
+        )
+        && request.resource.data.liraUnitPriceMinor is int
+        && request.resource.data.paraUnitPriceMinor is int
+        && request.resource.data.liraUnitPriceMinor > 0
+        && request.resource.data.paraUnitPriceMinor > 0
+        && request.resource.data.totalPayoutMinor
+          == request.resource.data.liraQuantity
+            * request.resource.data.liraUnitPriceMinor
+          + request.resource.data.paraQuantity
+            * request.resource.data.paraUnitPriceMinor
+        && request.resource.data.currency == 'EGP'
+        && request.resource.data.status == 'processing'
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isMasterDealer()
+        && resource.data.status == 'processing'
+        && request.resource.data.status == 'money_transferred'
+        && request.resource.data.transferredAt is timestamp
+        && request.resource.data.transferredBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'transferredAt',
+          'transferredBy'
         ]);
+      allow delete: if false;
     }
 
     match /masterDealerPurchaseOrders/{orderId} {
@@ -127,18 +227,39 @@ service cloud.firestore {
     }
 
     match /customerPortfolios/{customerId} {
-      allow read: if request.auth != null && request.auth.uid == customerId;
+      allow read: if request.auth != null
+        && (request.auth.uid == customerId || isMasterDealer());
       allow create, update: if request.auth != null
-        && request.auth.uid == customerId
+        && (request.auth.uid == customerId || isMasterDealer())
         && request.resource.data.keys().hasOnly([
           'liraQuantity',
           'paraQuantity',
+          'reservedLiraQuantity',
+          'reservedParaQuantity',
           'updatedAt'
         ])
         && request.resource.data.liraQuantity is int
         && request.resource.data.paraQuantity is int
         && request.resource.data.liraQuantity >= 0
-        && request.resource.data.paraQuantity >= 0;
+        && request.resource.data.paraQuantity >= 0
+        && (
+          !('reservedLiraQuantity' in request.resource.data.keys())
+          || (
+            request.resource.data.reservedLiraQuantity is int
+            && request.resource.data.reservedLiraQuantity >= 0
+            && request.resource.data.reservedLiraQuantity
+              <= request.resource.data.liraQuantity
+          )
+        )
+        && (
+          !('reservedParaQuantity' in request.resource.data.keys())
+          || (
+            request.resource.data.reservedParaQuantity is int
+            && request.resource.data.reservedParaQuantity >= 0
+            && request.resource.data.reservedParaQuantity
+              <= request.resource.data.paraQuantity
+          )
+        );
     }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'firebase_options.dart';
 import 'screens/customer_home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/master_dealer_dashboard_screen.dart';
 import 'screens/paymob_return_screen.dart';
 import 'widgets/khan_logo.dart';
 
@@ -159,10 +161,34 @@ class AuthGate extends StatelessWidget {
             customerEmail: user.email,
           );
         }
-        return CustomerHomeScreen(
-          customerId: user.uid,
-          customerName: user.displayName,
-          customerEmail: user.email,
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .snapshots(),
+          builder: (context, profileSnapshot) {
+            if (profileSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (profileSnapshot.hasError) {
+              return const Scaffold(
+                body: Center(
+                  child: Text('Your account profile could not be loaded.'),
+                ),
+              );
+            }
+            final role = profileSnapshot.data?.data()?['role'];
+            if (role == 'masterDealer') {
+              return const MasterDealerDashboardScreen();
+            }
+            return CustomerHomeScreen(
+              customerId: user.uid,
+              customerName: user.displayName,
+              customerEmail: user.email,
+            );
+          },
         );
       },
     );
