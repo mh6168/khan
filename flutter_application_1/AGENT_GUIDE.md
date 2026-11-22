@@ -75,6 +75,7 @@ Do not expose or document secret values. Use environment variables and ignored l
 - `cloud_firestore`
 - `flutter_dotenv`
 - `http`
+- `flutter_inappwebview` (`6.2.0-beta.3`) for inline product 3D viewers on Android and Flutter Web. This prerelease is pinned because its changelog includes the AGP 9 fix required by this repository's Android build.
 - `url_launcher`
 - `cupertino_icons`
 - Development: `flutter_lints`, `fake_cloud_firestore`, `flutter_test`
@@ -371,6 +372,17 @@ The PHP jeweler dashboard creates:
 - The PHP dashboard lists only products whose `jewelerId` equals the authenticated jeweler UID.
 - Before update, availability change, or delete, the PHP service re-checks `jewelerId`.
 
+### 3D model URL and viewer
+
+- The optional product field is `threeDModelUrl`. `JewelryProduct.fromFirestore` reads that field directly; the PHP product service stores any valid HTTPS URL without requiring a particular provider.
+- `ProductDetailsScreen` keeps the **View in 3D** action and toggles `Product3DViewer` inline; it no longer launches the URL with `url_launcher`.
+- `lib/widgets/product_3d_viewer.dart` embeds HTTPS URLs using `flutter_inappwebview`. Sketchfab share URLs containing a 32-character model ID are normalized to `https://sketchfab.com/models/{id}/embed`; existing embed URLs and other HTTPS viewer pages are loaded as entered.
+- JavaScript and zoom support are enabled for interactive viewers. The widget includes responsive height, loading/error states, retry, and a close action. Android requires the main-manifest INTERNET permission.
+- WebView dependency versions are pinned by `pubspec.lock`: `flutter_inappwebview` 6.2.0-beta.3, Android 1.2.0-beta.3, Web 1.2.0-beta.3, and platform interface 1.4.0-beta.3. The Android app uses minSdk 24 (the plugin requires 19), AGP 9.1.0, Gradle 9.3.1, and Java 17.
+- `InAppWebViewPlatform.instance != null` means no platform implementation was registered in the running app. The generated Web registrant calls `InAppWebViewFlutterPlugin.registerWith`, the Dart registrant calls `AndroidInAppWebViewPlatform.registerWith`, and Android's generated native registrant registers `InAppWebViewFlutterPlugin`; the package versions and Android configuration are compatible. After dependency changes, regenerate plugin metadata and rebuild/reinstall with `flutter clean` followed by `flutter pub get`; do not manually assign the platform singleton or edit generated registrants.
+- After `flutter clean`, the generated registrants include the Web, Dart Android, and native Android implementations. `flutter pub get` resolved dependencies but exited with a Windows symlink-support error because Developer Mode is disabled; analysis, the focused viewer tests, and Web/Android builds therefore ran with `--no-pub` against the resolved lockfile. No Android device/emulator was connected, so a runtime assertion on a user's device could not be reproduced. If it persists after a clean rebuild/reinstall, capture the target platform, complete stack trace, and build/run command to identify a runtime-specific registration failure.
+- The repository has no production Sketchfab URL example; the PHP tests contain only generic `example.com` URLs. A provider URL that forbids embedding, or a raw model file rather than an HTML viewer/embed, may not render interactively.
+
 ## 10. Jeweler onboarding and subscription workflows
 
 1. Jeweler signs up through the PHP `signup` flow or Firebase Authentication.
@@ -415,7 +427,7 @@ Views include:
 
 Implemented product management includes create, edit, availability toggle, delete, live gold-pricing display, and signed photo URLs.
 
-Reservations and sales/analytics currently display explicit empty states because reservation/sales records are not fully modeled. Account data is summary-oriented rather than a full customer-facing account system.
+The Reservations view now reads `jewelryReservations` from the shared Firestore project through the PHP server-only Firebase service account. PHP filters by verified session UID `jewelerId` and cross-checks `productId` against `products/{productId}.jewelerId`, then displays customer, product, reservation/deadline timestamps, integer minor-unit prices, and status. It remains read-only. Sales/analytics remains an empty state. Account data is summary-oriented rather than a full customer-facing account system.
 
 ### Master Dealer dashboard
 
@@ -527,6 +539,8 @@ PHP uses a dark charcoal/gold visual style in dashboard CSS and inline JewelerSe
 - Jeweler Reservations and Sales/Analytics dashboard views are explicit empty states.
 - Flutter profile menu includes placeholder screens for several account/support features.
 - Flutter `investment_purchase_screen.dart` contains demo/credential warnings and direct-client Paymob configuration.
+- The product 3D viewer has not been manually tested against a real product model URL because no representative model URL is present in the repository. Sketchfab embed conversion and missing/invalid URL behavior are covered by Flutter tests. Web and Android debug builds and `flutter analyze` pass; device-level Android interaction remains unverified.
+- `test/product_3d_viewer_test.dart` covers Sketchfab conversion, existing embed URLs, other HTTPS viewers, invalid URLs, and hiding the action for products without a model URL.
 - PHP and Flutter purchase flows have parallel implementations. Aligning their APIs and settlement behavior requires care.
 - `functions/index.js` contains callable implementations for investment and legacy reservation operations, but the Flutter Lira/Para and reservation screens do not invoke them.
 - PHP buyback cannot independently validate customer holdings from current Firestore portfolio data.
@@ -662,10 +676,14 @@ Product documents gain reservation coordination fields:
 
 ### Reservation status values
 
-- `reserved_for_48_hours`: Reserved for 48 hours
-- `handed_to_user`: Handed to you
-- `refunded_deposit`: Deposit refunded
-- `user_didnt_pick_up`: Not collected
+- `reserved_for_48_hours`: Reserved - Awaiting Pickup
+- `handed_to_user`: Collected by Customer
+- `refunded_deposit`: Deposit Refunded
+- `user_didnt_pick_up`: Not Collected - 48 Hours Expired
+
+The PHP jeweler dashboard writes these exact same Firestore string values to the existing `jewelryReservations/{reservationId}.status` field. It does not create a second document. PHP validates the authenticated jeweler's UID against both `jewelryReservations.jewelerId` and `products/{productId}.jewelerId`. Collected and refund statuses are accepted only before expiry; not-collected is accepted only after expiry.
+
+Status corrections are supported: `handed_to_user` can be changed to active, refunded, or expired-not-collected outcomes where the deadline rules permit; a refunded reservation can be corrected back to active or collected before expiry. `user_didnt_pick_up` is terminal and cannot be changed. A refund cannot be changed to not-collected.
 
 When My Orders is opened after `reservationExpiresAt`, `ReservationService.watchMyReservations` changes an expired `reserved_for_48_hours` record to `user_didnt_pick_up`. Firestore rules permit this status-only update for the owner only after the expiry time. This is client-triggered; there is no scheduled expiration job.
 
@@ -692,9 +710,8 @@ When My Orders is opened after `reservationExpiresAt`, `ReservationService.watch
 
 - Expired reservations are marked `user_didnt_pick_up` when the customer's My Orders stream is opened after the 48-hour expiry; there is no scheduled background job.
 - The 25% KHAN / 75% jeweler non-refund distribution is not implemented.
-- PHP does not yet read or manage `jewelryReservations`; future integration should use the documented collection/status fields.
-- PHP must remain read-only until the future jeweler-dashboard status workflow is explicitly implemented.
-- Product images in reservations use `productImagePath`; Flutter currently displays a generic jewelry icon for My Orders and does not yet generate Supabase signed/public URLs from this path. PHP signed-URL integration may be reused later.
+- PHP reads `jewelryReservations` through `FirestoreAdminClient::listJewelryReservationsByJeweler()` and filters on `jewelerId` plus product ownership. It remains read-only until the status workflow is explicitly implemented.
+- PHP converts `productImagePath` to a short-lived Supabase signed URL for the jeweler dashboard; Flutter My Orders still has its existing public-image URL behavior.
 - Real Paymob success, pending, failure, cancellation, duplicate callback, and cross-device callback behavior require live credentials and an actual test transaction.
 
 ## 18. Reservation code-review corrections
@@ -764,7 +781,7 @@ Relevant existing Profile, Paymob, Investment, Jeweler, and Product tests passed
 - Paymob pending states are not an authoritative reservation confirmation.
 - The Paymob checkout's 15-minute lock and the reservation's 48-hour period are separate durations.
 - No scheduled function currently expires every `reserved_for_48_hours` record exactly after 48 hours.
-- No PHP update is made to status `handed_to_user`, `refunded_deposit`, or `user_didnt_pick_up`.
+- PHP jewelers can update a reservation status to `handed_to_user`, `refunded_deposit`, or `user_didnt_pick_up` through the My Reservations dashboard. Updates modify the existing `jewelryReservations/{reservationId}` document in the shared `khan-81cd6` Firestore project. Flutter reads the exact `status` value through the existing `JewelryReservation` model and My Orders snapshot stream.
 - No automatic 25% KHAN / 75% jeweler financial split is implemented.
 - No delivery workflow is implemented; pickup remains the documented physical-store process.
 - Live Paymob transactions and callbacks have not been performed in this review.

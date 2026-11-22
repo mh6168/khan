@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../data/jeweler_service.dart';
 import '../data/product_service.dart';
@@ -8,6 +7,7 @@ import '../khan_colors.dart';
 import '../models/jeweler_profile.dart';
 import '../models/jewelry_product.dart';
 import '../widgets/jeweler_avatar.dart';
+import '../widgets/product_3d_viewer.dart';
 import 'jeweler_profile_screen.dart';
 import 'reservation/reservation_payment_method_screen.dart';
 
@@ -29,6 +29,7 @@ class ProductDetailsScreen extends StatefulWidget {
 
 class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   int _currentImage = 0;
+  bool _show3DViewer = false;
   late Future<JewelerProfile?> _jewelerProfile;
 
   @override
@@ -81,9 +82,23 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 ),
                 const SizedBox(height: 24),
                 _ProductHeader(product: widget.product),
-                if (_validThreeDUrl(widget.product.threeDModelUrl)) ...[
+                if (threeDModelViewerUri(widget.product.threeDModelUrl) !=
+                    null) ...[
                   const SizedBox(height: 16),
-                  _ThreeDAction(url: widget.product.threeDModelUrl!),
+                  _ThreeDAction(
+                    isVisible: _show3DViewer,
+                    onPressed: () {
+                      setState(() => _show3DViewer = !_show3DViewer);
+                    },
+                  ),
+                  if (_show3DViewer) ...[
+                    const SizedBox(height: 12),
+                    Product3DViewer(
+                      key: ValueKey(widget.product.threeDModelUrl),
+                      url: widget.product.threeDModelUrl!,
+                      onClose: () => setState(() => _show3DViewer = false),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 24),
                 _Specifications(product: widget.product),
@@ -330,41 +345,20 @@ class _VerifiedBadge extends StatelessWidget {
   }
 }
 
-bool _validThreeDUrl(String? value) {
-  if (value == null || value.trim().isEmpty) return false;
-  final uri = Uri.tryParse(value.trim());
-  return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty;
-}
-
 class _ThreeDAction extends StatelessWidget {
-  const _ThreeDAction({required this.url});
+  const _ThreeDAction({required this.isVisible, required this.onPressed});
 
-  final String url;
-
-  Future<void> _open(BuildContext context) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null || !_validThreeDUrl(url)) {
-      return;
-    }
-
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('This 3D model link could not be opened.'),
-          ),
-        );
-    }
-  }
+  final bool isVisible;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
-      onPressed: () => _open(context),
-      icon: const Icon(Icons.view_in_ar_outlined),
-      label: const Text('View in 3D'),
+      onPressed: onPressed,
+      icon: Icon(
+        isVisible ? Icons.visibility_off_outlined : Icons.view_in_ar_outlined,
+      ),
+      label: Text(isVisible ? 'Hide 3D Model' : 'View in 3D'),
       style: OutlinedButton.styleFrom(
         foregroundColor: khanSecondaryDark,
         side: const BorderSide(color: khanGold),
