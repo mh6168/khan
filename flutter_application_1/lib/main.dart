@@ -9,6 +9,7 @@ import 'screens/customer_home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/master_dealer_dashboard_screen.dart';
 import 'screens/paymob_return_screen.dart';
+import 'screens/reservation/reservation_paymob_return_screen.dart';
 import 'widgets/khan_logo.dart';
 
 const _dark = Color(0xFF111618);
@@ -151,6 +152,39 @@ class AuthGate extends StatelessWidget {
         }
         final user = snapshot.data;
         if (user == null) return const LoginScreen();
+
+        final reservationOrderId = Uri
+            .base
+            .queryParameters['khan_reservation_order_id']
+            ?.trim();
+        if (reservationOrderId != null &&
+            reservationOrderId.isNotEmpty &&
+            RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(reservationOrderId)) {
+          String? transactionId;
+          for (final key in const [
+            'id',
+            'transaction_id',
+            'txn_id',
+            'payment_id',
+          ]) {
+            final value = Uri.base.queryParameters[key]?.trim();
+            if (value != null && value.isNotEmpty) {
+              transactionId = value;
+              break;
+            }
+          }
+          final cancelled =
+              Uri.base.queryParameters['cancelled']?.toLowerCase() == 'true' ||
+              Uri.base.queryParameters['status']?.toLowerCase() == 'cancelled';
+          return ReservationPaymobReturnScreen(
+            orderId: reservationOrderId,
+            customerId: user.uid,
+            transactionId: transactionId,
+            wasCancelled: cancelled,
+            customerName: user.displayName,
+            customerEmail: user.email,
+          );
+        }
 
         final callback = PaymobReturnData.fromUri(Uri.base);
         if (callback != null) {

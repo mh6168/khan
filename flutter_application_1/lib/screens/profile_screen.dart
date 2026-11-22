@@ -5,6 +5,7 @@ import '../widgets/profile/profile_header.dart';
 import '../widgets/profile/profile_menu_section.dart';
 import '../widgets/profile/profile_menu_tile.dart';
 import 'profile_placeholder_screen.dart';
+import 'reservation/my_orders_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({
@@ -14,6 +15,7 @@ class ProfileScreen extends StatelessWidget {
     required this.customerEmail,
     required this.customerPhone,
     required this.profileLoadFailed,
+    required this.customerId,
     required this.onLogout,
     required this.onFavoritesTap,
     required this.onAccountSettingsTap,
@@ -24,6 +26,7 @@ class ProfileScreen extends StatelessWidget {
   final String? customerEmail;
   final String? customerPhone;
   final bool profileLoadFailed;
+  final String customerId;
   final VoidCallback onLogout;
   final VoidCallback onFavoritesTap;
   final VoidCallback onAccountSettingsTap;
@@ -94,11 +97,10 @@ class ProfileScreen extends StatelessWidget {
                     icon: Icons.receipt_long_outlined,
                     title: 'My Orders',
                     subtitle: 'Order history and updates',
-                    onTap: () => _openPlaceholder(
-                      context,
-                      title: 'My Orders',
-                      subtitle: 'Your order history will live here.',
-                      icon: Icons.receipt_long_outlined,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => MyOrdersScreen(customerId: customerId),
+                      ),
                     ),
                   ),
                   ProfileMenuTile(

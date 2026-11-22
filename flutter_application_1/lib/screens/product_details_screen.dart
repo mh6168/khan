@@ -9,6 +9,7 @@ import '../models/jeweler_profile.dart';
 import '../models/jewelry_product.dart';
 import '../widgets/jeweler_avatar.dart';
 import 'jeweler_profile_screen.dart';
+import 'reservation/reservation_payment_method_screen.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
   const ProductDetailsScreen({
@@ -87,6 +88,28 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 const SizedBox(height: 24),
                 _Specifications(product: widget.product),
                 const SizedBox(height: 24),
+                if (widget.product.productType == 'jewelry') ...[
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ReservationPaymentMethodScreen(
+                          product: widget.product,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.bookmark_add_outlined),
+                    label: const Text('Reserve Now'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: khanDark,
+                      foregroundColor: khanGold,
+                      minimumSize: const Size.fromHeight(54),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
                 _ListedBySection(
                   jewelerProfile: _jewelerProfile,
                   onVisitStore: (profile) {

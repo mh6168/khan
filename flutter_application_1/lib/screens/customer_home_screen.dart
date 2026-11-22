@@ -158,6 +158,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               ),
               _ => ProfileScreen(
                 header: _buildHeader(customerName),
+                customerId: widget.customerId ?? '',
                 customerName: customerName,
                 customerEmail: customerProfile?.email ?? widget.customerEmail,
                 customerPhone: customerProfile?.phone,

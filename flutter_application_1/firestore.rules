@@ -44,6 +44,23 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /jewelryReservations/{reservationId} {
+      allow read: if request.auth != null
+        && resource.data.customerUid == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /jewelryReservationOrders/{orderId} {
+      allow read: if request.auth != null
+        && resource.data.customerUid == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /jewelryReservationPayments/{paymentId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     match /masterDealerInventory/{assetId} {
       allow read: if request.auth != null;
       // Client writes support the Spark-plan investment demo workflows.
