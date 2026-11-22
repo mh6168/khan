@@ -32,6 +32,7 @@ class JewelryProduct {
     this.originalPremium,
     this.threeDModelUrl,
     this.createdAt,
+    this.availability = 'available',
   });
 
   factory JewelryProduct.fromFirestore(
@@ -87,6 +88,7 @@ class JewelryProduct {
       originalPremium: _doubleValue(data['originalPremium']),
       threeDModelUrl: _stringValue(data['threeDModelUrl']),
       createdAt: _dateValue(data['createdAt']),
+      availability: _stringValue(data['availability']) ?? 'available',
     );
   }
 
@@ -115,6 +117,11 @@ class JewelryProduct {
   final double? originalPremium;
   final String? threeDModelUrl;
   final DateTime? createdAt;
+  final String availability;
+
+  bool get canReserve =>
+      (productType == 'jewelry' || productType == 'watch') &&
+      availability == 'available';
 
   JewelryProduct copyWithImageUrls(List<String> urls) {
     return JewelryProduct(
@@ -143,6 +150,7 @@ class JewelryProduct {
       originalPremium: originalPremium,
       threeDModelUrl: threeDModelUrl,
       createdAt: createdAt,
+      availability: availability,
     );
   }
 

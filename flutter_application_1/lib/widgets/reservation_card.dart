@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/supabase_storage.dart';
 import '../khan_colors.dart';
 import '../models/jewelry_reservation.dart';
 
@@ -35,10 +36,25 @@ class ReservationCard extends StatelessWidget {
                       color: khanGold.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(
-                      Icons.diamond_outlined,
-                      color: khanSecondaryDark,
-                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child:
+                        reservation.productImagePath == null ||
+                            reservation.productImagePath!.trim().isEmpty
+                        ? const Icon(
+                            Icons.diamond_outlined,
+                            color: khanSecondaryDark,
+                          )
+                        : Image.network(
+                            publicSupabaseImageUrl(
+                              reservation.productImagePath!,
+                            ),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
+                                  Icons.diamond_outlined,
+                                  color: khanSecondaryDark,
+                                ),
+                          ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(

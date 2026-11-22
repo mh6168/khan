@@ -54,8 +54,11 @@ class _ReservationCheckoutScreenState extends State<ReservationCheckoutScreen> {
         checkout.checkoutUrl,
         mode: LaunchMode.externalApplication,
       );
-      if (!opened && mounted) {
-        setState(() => _error = 'Could not open the Paymob checkout page.');
+      if (!opened) {
+        await _service.cancelCheckout(checkout.orderId);
+        if (mounted) {
+          setState(() => _error = 'Could not open the Paymob checkout page.');
+        }
       }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
@@ -105,6 +108,29 @@ class _ReservationCheckoutScreenState extends State<ReservationCheckoutScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (widget.product.imageUrls.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Image.network(
+                              widget.product.imageUrls.first,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                    color: khanSecondaryDark,
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.diamond_outlined,
+                                      color: khanLightGold,
+                                      size: 48,
+                                    ),
+                                  ),
+                            ),
+                          ),
+                        ),
+                      if (widget.product.imageUrls.isNotEmpty)
+                        const SizedBox(height: 16),
                       Text(
                         quote.productName,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -146,7 +172,7 @@ class _ReservationCheckoutScreenState extends State<ReservationCheckoutScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Text(
-                  'Pay 10% now to reserve this jewelry piece for 48 hours. '
+                  'Pay 10% now to reserve this piece for 48 hours. '
                   'The remaining balance will be paid directly to the jeweler '
                   'when collecting your order.',
                 ),

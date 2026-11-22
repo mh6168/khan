@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/supabase_storage.dart';
 import '../../khan_colors.dart';
 import '../../models/jewelry_reservation.dart';
 
@@ -20,6 +21,30 @@ class ReservationDetailScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (reservation.productImagePath != null &&
+              reservation.productImagePath!.trim().isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Image.network(
+                  publicSupabaseImageUrl(reservation.productImagePath!),
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: khanSecondaryDark,
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.diamond_outlined,
+                      color: khanLightGold,
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (reservation.productImagePath != null &&
+              reservation.productImagePath!.trim().isNotEmpty)
+            const SizedBox(height: 16),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 620),
             child: Container(

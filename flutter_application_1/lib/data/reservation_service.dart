@@ -76,10 +76,12 @@ class ReservationCheckout {
 class ReservationService {
   ReservationService({FirebaseFirestore? firestore, http.Client? client})
     : _firestore = firestore ?? FirebaseFirestore.instance,
-      _client = client ?? http.Client();
+      _client = client,
+      _ownsClient = client == null;
 
   final FirebaseFirestore _firestore;
-  final http.Client _client;
+  final http.Client? _client;
+  final bool _ownsClient;
 
   Future<ReservationQuote> getQuote(String productId) async {
     final result = await _call('getJewelryReservationQuote', {
@@ -142,47 +144,52 @@ class ReservationService {
     final uri = Uri.parse(
       'https://us-central1-$projectId.cloudfunctions.net/$functionName',
     );
-    final response = await _client
-        .post(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({'data': data}),
-        )
-        .timeout(const Duration(seconds: 30));
-    dynamic payload;
+    final client = _client ?? http.Client();
     try {
-      payload = jsonDecode(response.body);
-    } on FormatException {
-      throw Exception('The payment service returned an invalid response.');
-    }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      String? message;
-      if (payload is Map && payload['error'] is Map) {
-        message = (payload['error'] as Map)['message']?.toString();
+      final response = await client
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'data': data}),
+          )
+          .timeout(const Duration(seconds: 30));
+      dynamic payload;
+      try {
+        payload = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('The payment service returned an invalid response.');
       }
-      throw Exception(
-        message == null || message.isEmpty
-            ? 'The payment service is unavailable.'
-            : message,
-      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        String? message;
+        if (payload is Map && payload['error'] is Map) {
+          message = (payload['error'] as Map)['message']?.toString();
+        }
+        throw Exception(
+          message == null || message.isEmpty
+              ? 'The payment service is unavailable.'
+              : message,
+        );
+      }
+      if (payload is Map && payload['error'] is Map) {
+        final message = (payload['error'] as Map)['message']?.toString();
+        throw Exception(
+          message == null || message.isEmpty
+              ? 'The payment service rejected the request.'
+              : message,
+        );
+      }
+      if (payload is Map && payload['result'] is Map) {
+        return Map<String, dynamic>.from(payload['result'] as Map);
+      }
+      if (payload is Map && payload['data'] is Map) {
+        return Map<String, dynamic>.from(payload['data'] as Map);
+      }
+      throw Exception('The payment service returned an unexpected response.');
+    } finally {
+      if (_ownsClient) client.close();
     }
-    if (payload is Map && payload['error'] is Map) {
-      final message = (payload['error'] as Map)['message']?.toString();
-      throw Exception(
-        message == null || message.isEmpty
-            ? 'The payment service rejected the request.'
-            : message,
-      );
-    }
-    if (payload is Map && payload['result'] is Map) {
-      return Map<String, dynamic>.from(payload['result'] as Map);
-    }
-    if (payload is Map && payload['data'] is Map) {
-      return Map<String, dynamic>.from(payload['data'] as Map);
-    }
-    throw Exception('The payment service returned an unexpected response.');
   }
 }

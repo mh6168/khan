@@ -376,11 +376,51 @@ async function calculateReservationQuote(productId) {
   const productDoc = await db.doc(`products/${productId}`).get();
   if (!productDoc.exists) throw new HttpsError("not-found", "Product not found.");
   const product = productDoc.data();
-  if (product.availability !== "available") {
+  if (product.availability === "reserved_pending") {
+    const lockExpires = product.reservationLockExpiresAt
+      ? new Date(product.reservationLockExpiresAt)
+      : null;
+    if (lockExpires instanceof Date && !Number.isNaN(lockExpires.getTime()) &&
+        lockExpires <= new Date()) {
+      await db.runTransaction(async (transaction) => {
+        const lockedRef = db.doc(`products/${productId}`);
+        const lockedDoc = await transaction.get(lockedRef);
+        const locked = lockedDoc.data() || {};
+        if (locked.availability !== "reserved_pending") return;
+        const latestLock = locked.reservationLockExpiresAt
+          ? new Date(locked.reservationLockExpiresAt)
+          : null;
+        if (latestLock instanceof Date && !Number.isNaN(latestLock.getTime()) &&
+            latestLock > new Date()) return;
+        const staleOrderId = String(locked.reservationLockOrderId || "");
+        if (/^[A-Za-z0-9_-]+$/.test(staleOrderId)) {
+          const staleOrderRef = db.doc(`jewelryReservationOrders/${staleOrderId}`);
+          const staleOrderDoc = await transaction.get(staleOrderRef);
+          if (staleOrderDoc.exists &&
+              String(staleOrderDoc.data().status || "") === "pending") {
+            transaction.update(staleOrderRef, {
+              status: "expired",
+              expiredAt: new Date().toISOString(),
+            });
+          }
+        }
+        transaction.update(lockedRef, {
+          availability: "available",
+          reservationLockOrderId: FieldValue.delete(),
+          reservationLockExpiresAt: FieldValue.delete(),
+          updatedAt: new Date().toISOString(),
+        });
+      });
+      product.availability = "available";
+    } else if (!(lockExpires instanceof Date) || Number.isNaN(lockExpires.getTime()) ||
+        lockExpires > new Date()) {
+      throw new HttpsError("failed-precondition", "This product is currently reserved for checkout.");
+    }
+  } else if (product.availability !== "available") {
     throw new HttpsError("failed-precondition", "This product is no longer available for reservation.");
   }
-  if (product.productType !== "jewelry") {
-    throw new HttpsError("failed-precondition", "Only jewelry pieces can be reserved.");
+  if (!["jewelry", "watch"].includes(product.productType)) {
+    throw new HttpsError("failed-precondition", "Only jewelry pieces and watches can be reserved.");
   }
 
   let totalMinor;
@@ -394,6 +434,12 @@ async function calculateReservationQuote(productId) {
       throw new HttpsError("failed-precondition", "The current jewelry price is unavailable.");
     }
     totalMinor = Math.round((perGramMinor / 100 + premium) * weight * 100);
+  } else {
+    const watchPrice = Number(product.price);
+    if (!(watchPrice > 0)) {
+      throw new HttpsError("failed-precondition", "The watch price is unavailable.");
+    }
+    totalMinor = Math.round(watchPrice * 100);
   }
   if (!(totalMinor > 0)) {
     throw new HttpsError("failed-precondition", "The product price is unavailable.");
@@ -411,7 +457,9 @@ async function calculateReservationQuote(productId) {
     productId,
     jewelerId: String(product.jewelerId || ""),
     jewelerStoreName,
-    productName: String(product.title || "Jewelry piece"),
+    productName: product.productType === "watch"
+      ? [String(product.brand || ""), String(product.model || "")].filter(Boolean).join(" ").trim() || "Watch"
+      : String(product.title || "Jewelry piece"),
     productImagePath: Array.isArray(product.photoPaths) && product.photoPaths[0]
       ? String(product.photoPaths[0])
       : "",
@@ -458,8 +506,11 @@ exports.createJewelryReservationCheckout = onCall(async (request) => {
     const productDoc = await transaction.get(productRef);
     const product = productDoc.data() || {};
     if (product.availability === "reserved_pending") {
-      const lockExpires = new Date(product.reservationLockExpiresAt || 0);
-      if (lockExpires > new Date()) {
+      const lockExpires = product.reservationLockExpiresAt
+        ? new Date(product.reservationLockExpiresAt)
+        : null;
+      if (lockExpires instanceof Date && !Number.isNaN(lockExpires.getTime()) &&
+          lockExpires > new Date()) {
         throw new HttpsError("failed-precondition", "This product is currently reserved for checkout.");
       }
     } else if (product.availability !== "available") {
@@ -594,7 +645,7 @@ exports.confirmJewelryReservationPayment = onCall(async (request) => {
         });
       }
     });
-    return { status: payment.success === true ? "failed" : "cancelled", processed: false };
+    return { status: "failed", processed: false };
   }
   if (payment.currency !== "EGP" || Number(payment.amount_cents) <= 0) {
     throw new HttpsError("failed-precondition", "Payment details are invalid.");
@@ -616,6 +667,15 @@ exports.confirmJewelryReservationPayment = onCall(async (request) => {
       throw new HttpsError("permission-denied", "This reservation belongs to another customer.");
     }
     if (pending.status === "completed") {
+      if (String(pending.paymobTransactionId || "") !== transactionId) {
+        throw new HttpsError("failed-precondition", "This Paymob transaction does not match the reservation.");
+      }
+      const paymentRef = db.doc(`jewelryReservationPayments/payment-${transactionId}`);
+      const paymentDoc = await transaction.get(paymentRef);
+      if (!paymentDoc.exists ||
+          String(paymentDoc.data().reservationOrderId || "") !== orderId) {
+        throw new HttpsError("failed-precondition", "The completed reservation payment record is missing.");
+      }
       processed = false;
       reservationId = pending.reservationId || orderId;
       return;

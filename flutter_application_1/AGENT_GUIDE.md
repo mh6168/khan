@@ -567,7 +567,7 @@ The Flutter test suite includes fake-Firestore Paymob, sell request, investment,
 Existing product details and profile screens were modified:
 
 - `lib/screens/product_details_screen.dart`
-  - Displays **Reserve Now** for jewelry products and opens the reservation payment-method flow.
+  - Displays **Reserve Now** for available jewelry and watch products and opens the reservation payment-method flow.
 - `lib/screens/profile_screen.dart`
   - Replaced the My Orders placeholder with `MyOrdersScreen`.
 - `lib/screens/customer_home_screen.dart`
@@ -583,6 +583,7 @@ The reservation implementation uses these callable functions in `functions/index
   - Requires Firebase Authentication.
   - Reads the authoritative `products/{productId}` document.
   - Re-fetches the current GoldAPI XAU/EGP karat price for jewelry.
+  - Uses the persisted watch `price` field for watch reservations.
   - Reads the jeweler store name from `applications/{jewelerId}`.
   - Returns the current total, 10% deposit, and remaining 90% in integer minor units.
 - `createJewelryReservationCheckout`
@@ -627,6 +628,7 @@ Paymob initiation and confirmation use the existing `PAYMOB_*` environment conve
 - `expiresAt`
 - `merchantOrderId`
 - optional `paymobOrderId`, `paymobTransactionId`, `paymentTransactionId`, `paidAt`, `completedAt`, `cancelledAt`, `reservationId`
+- expired checkout cleanup may add `expiredAt` and change `status` to `expired`.
 
 `jewelryReservations/{reservationId}` is the authoritative customer reservation:
 
@@ -717,6 +719,71 @@ These values are read-only in Flutter. The future PHP jeweler dashboard owns sta
 - PHP must remain read-only until the future jeweler-dashboard status workflow is explicitly implemented.
 - Product images in reservations use `productImagePath`; Flutter currently displays a generic jewelry icon for My Orders and does not yet generate Supabase signed/public URLs from this path. PHP signed-URL integration may be reused later.
 - Real Paymob success, pending, failure, cancellation, duplicate callback, and cross-device callback behavior require live credentials and an actual test transaction.
+
+## 18. Reservation code-review corrections
+
+The following corrections were identified during the implementation review and are now part of the source:
+
+### Availability and stale checkout locks
+
+- `JewelryProduct` now includes `availability` and `canReserve`.
+- The Reserve Now button is disabled for non-available jewelry and watch products and for already unavailable/reserved pieces.
+- The UI is a convenience only; `getJewelryReservationQuote` and `createJewelryReservationCheckout` remain authoritative and recheck availability server-side.
+- `reserved_pending` with an expired lock is cleaned by a Cloud Function transaction:
+  - product availability returns to `available`;
+  - `reservationLockOrderId` and `reservationLockExpiresAt` are deleted;
+  - the matching pending checkout order is changed to `expired` with `expiredAt`.
+- An active `reserved_pending` lock remains unavailable until its 15-minute lock expires.
+
+### Confirmation correctness
+
+- A duplicate confirmation for an already completed order only succeeds if the supplied Paymob transaction ID matches `paymobTransactionId` in the order and a matching payment idempotency record exists.
+- A completed order with a different or unrelated transaction ID is rejected.
+- A failed or refunded Paymob lookup is normalized to the `failed` return status and cannot create a reservation.
+- Checkout cancellation releases the product lock only when it matches the stored `reservationLockOrderId`.
+
+### Flutter checkout UX
+
+- The checkout summary now displays the product image when the configured public Supabase image URL is available.
+- If Paymob checkout cannot be opened, Flutter calls `cancelJewelryReservationCheckout` to release the server-side lock.
+- My Orders cards and reservation details display the stored product image path through the existing Supabase public-image helper, with a diamond fallback.
+- Unknown future reservation statuses display `Status unavailable` rather than incorrectly implying that the reservation is active for 48 hours.
+
+### HTTP and service-corrected details
+
+- `ReservationService` now creates a dedicated HTTP client for each call when no injected client is supplied and closes it afterward.
+- Injected test clients are retained and are not closed by the service.
+- Callable response handling accepts the existing `result` envelope and the `data` compatibility envelope.
+
+### Focused automated coverage added
+
+`test/product_integration_test.dart` now verifies:
+
+- only available jewelry and watch products can expose `canReserve`;
+- available watches are reservable;
+- all four exact reservation status labels;
+- existing jewelry/watch product behavior remains separate.
+
+Relevant existing Profile, Paymob, Investment, Jeweler, and Product tests passed after the review corrections.
+
+### Confirmed security boundaries
+
+- Direct client writes to `jewelryReservations`, `jewelryReservationOrders`, and `jewelryReservationPayments` are denied.
+- Customers can read only reservation/order documents whose `customerUid` equals their Firebase UID.
+- Cloud Functions use Firebase Authentication and the server retains ownership, price, deposit, and Paymob verification logic.
+- A confirmed reservation requires an exact successful Paymob deposit amount and matching `khan-rsv-{orderId}` merchant order.
+- Firestore transactions prevent concurrent checkout/order state from reserving the same product.
+- The payment idempotency collection prevents reuse of a verified Paymob transaction.
+
+### Current implementation limitations
+
+- Paymob pending states are not an authoritative reservation confirmation.
+- The Paymob checkout's 15-minute lock and the reservation's 48-hour period are separate durations.
+- No scheduled function currently expires every `reserved_for_48_hours` record exactly after 48 hours.
+- No PHP update is made to status `handed_to_user`, `refunded_deposit`, or `user_didnt_pick_up`.
+- No automatic 25% KHAN / 75% jeweler financial split is implemented.
+- No delivery workflow is implemented; pickup remains the documented physical-store process.
+- Live Paymob transactions and callbacks have not been performed in this review.
 
 # FUTURE AI AGENT INSTRUCTIONS
 

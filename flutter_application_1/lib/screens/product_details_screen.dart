@@ -88,17 +88,24 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 const SizedBox(height: 24),
                 _Specifications(product: widget.product),
                 const SizedBox(height: 24),
-                if (widget.product.productType == 'jewelry') ...[
+                if (widget.product.productType == 'jewelry' ||
+                    widget.product.productType == 'watch') ...[
                   FilledButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ReservationPaymentMethodScreen(
-                          product: widget.product,
-                        ),
-                      ),
-                    ),
+                    onPressed: widget.product.canReserve
+                        ? () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => ReservationPaymentMethodScreen(
+                                product: widget.product,
+                              ),
+                            ),
+                          )
+                        : null,
                     icon: const Icon(Icons.bookmark_add_outlined),
-                    label: const Text('Reserve Now'),
+                    label: Text(
+                      widget.product.canReserve
+                          ? 'Reserve Now'
+                          : 'Unavailable for reservation',
+                    ),
                     style: FilledButton.styleFrom(
                       backgroundColor: khanDark,
                       foregroundColor: khanGold,

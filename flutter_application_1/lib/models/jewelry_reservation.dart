@@ -68,10 +68,11 @@ class JewelryReservation {
   final DateTime expiresAt;
 
   String get statusLabel => switch (status) {
+    'reserved_for_48_hours' => 'Reserved for 48 hours',
     'handed_to_user' => 'Handed to you',
     'refunded_deposit' => 'Deposit refunded',
     'user_didnt_pick_up' => 'Not collected',
-    _ => 'Reserved for 48 hours',
+    _ => 'Status unavailable',
   };
 
   static String? _string(dynamic value) {

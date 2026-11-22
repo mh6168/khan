@@ -62,7 +62,7 @@ class MyOrdersScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Reserved jewelry pieces will appear here.',
+                      'Reserved jewelry pieces and watches will appear here.',
                       textAlign: TextAlign.center,
                     ),
                   ],
