@@ -78,6 +78,7 @@ Do not expose or document secret values. Use environment variables and ignored l
 - `url_launcher`
 - `cupertino_icons`
 - Development: `flutter_lints`, `fake_cloud_firestore`, `flutter_test`
+- Reservation checkout does not use a Flutter Cloud Functions package; the older reservation callable exports in `functions/index.js` are unused by the current client flow.
 - The app is configured for Android and web; `lib/main.dart` explicitly reports Windows desktop Firebase plugins as unsupported.
 
 ### PHP
@@ -269,7 +270,7 @@ Relationships:
 
 ### `createInvestmentPurchase`
 
-- Callable by signed-in users.
+- Callable by signed-in users. The current Flutter investment checkout does not call this function; it is a separate server-side implementation.
 - Validates `lira` or `para`, positive quantity, and 1–10,000 range.
 - Checks current price and inventory.
 - Atomically reserves stock and creates `masterDealerPurchaseOrders/{orderId}`.
@@ -277,7 +278,7 @@ Relationships:
 
 ### `confirmInvestmentPurchase`
 
-- Callable by signed-in users.
+- Callable by signed-in users. The current Flutter investment return screen verifies through `PaymobService` and settles through `InvestmentService` instead of calling this function.
 - Verifies the Paymob transaction directly.
 - Checks success/refund/void/pending state, EGP, exact amount, and merchant order ID.
 - Settles inventory, portfolio holdings, order status, transaction, and finance/ledger inside a Firestore transaction.
@@ -291,9 +292,12 @@ The PHP `MasterDealerPaymentService` has a separate server-side Paymob confirmat
 
 - `lib/data/paymob_service.dart` implements authentication, Paymob order creation, payment-key creation, iframe URL generation, and transaction verification.
 - The environment names are `PAYMOB_API_KEY`, `PAYMOB_INTEGRATION_ID`, `PAYMOB_IFRAME_ID`, `PAYMOB_API_BASE_URL`, and `PAYMOB_REDIRECT_URL`.
+- The existing Lira/Para Flutter purchase uses `InvestmentPurchaseScreen` -> `InvestmentService.createPendingPurchase` -> `PaymobService.createCheckoutSession` -> `url_launcher`. `PaymobService` sends the Paymob REST requests directly from Flutter and reads these values from Flutter `.env`; this is the current implementation but does not keep the Paymob API key secret from app users.
 - Client callbacks are handled by `lib/screens/paymob_return_screen.dart`.
 - `PaymobReturnData` reads `khan_order_id`, payment status/transaction parameters from `Uri.base`.
-- On return, the app verifies the Paymob transaction before `completePurchase()` credits the portfolio.
+- On return, `PaymobReturnScreen` verifies the Paymob transaction through `PaymobService` before `InvestmentService.completePurchase()` credits the portfolio.
+- Reservations now call this same `PaymobService` directly, using the same `.env` configuration, order/payment-key requests, iframe URL, and `url_launcher` approach as Lira/Para.
+- This is prototype-only: `.env` is bundled as an app asset, so its Paymob API key can be extracted from the built app. Use test credentials only and never commit live credentials.
 
 ### PHP jeweler subscriptions
 
@@ -328,10 +332,10 @@ The PHP `MasterDealerPaymentService` has a separate server-side Paymob confirmat
 
 ### Purchase
 
-- A purchase order reserves inventory for 15 minutes.
-- Paymob checkout uses the exact order amount and `khan-md-{purchaseOrderId}` merchant ID.
-- Successful verified settlement decreases inventory/on-hand and reserved stock, adds holdings to `customerPortfolios`, marks the order completed, adds a transaction, and updates the Master Dealer finance account.
-- Cancellation/expiry releases the reservation.
+- The Flutter purchase screen creates a pending Firestore order and reserves inventory client-side for 15 minutes through `InvestmentService.createPendingPurchase`.
+- Flutter `PaymobService` then creates the Paymob order/payment key using the exact EGP minor-unit amount and `khan-md-{purchaseOrderId}` merchant ID; `url_launcher` opens the returned iframe URL.
+- On return, Flutter verifies the transaction directly with Paymob and settles through `InvestmentService.completePurchase`; cancellation/expiry uses `InvestmentService.cancelPurchase`.
+- `createInvestmentPurchase` and `confirmInvestmentPurchase` are additional callable implementations in `functions/index.js`, but the current Flutter Lira/Para screen does not invoke them.
 
 ### Buyback/sellback
 
@@ -524,7 +528,7 @@ PHP uses a dark charcoal/gold visual style in dashboard CSS and inline JewelerSe
 - Flutter profile menu includes placeholder screens for several account/support features.
 - Flutter `investment_purchase_screen.dart` contains demo/credential warnings and direct-client Paymob configuration.
 - PHP and Flutter purchase flows have parallel implementations. Aligning their APIs and settlement behavior requires care.
-- Flutter Cloud Functions are callable client functions and are not the same as PHP's server-side REST/API settlement.
+- `functions/index.js` contains callable implementations for investment and legacy reservation operations, but the Flutter Lira/Para and reservation screens do not invoke them.
 - PHP buyback cannot independently validate customer holdings from current Firestore portfolio data.
 - The PHP README says its customer purchase/settlement API is an implementation contract that requires the mobile integration to use the exact PHP/Paymob flow.
 - Firestore rules allow direct Spark-plan investment writes, while production would ideally move more of that state behind authenticated server/Cloud Function transactions.
@@ -549,14 +553,14 @@ The Flutter test suite includes fake-Firestore Paymob, sell request, investment,
 - `lib/models/jewelry_reservation.dart`
   - Defines `JewelryReservation` and the customer-facing status label mapping.
 - `lib/data/reservation_service.dart`
-  - Calls trusted Cloud Functions for authoritative quotes, checkout creation, Paymob confirmation, and checkout cancellation.
+  - Calculates the deposit from the current `JewelryProduct.priceEgp`, creates/cancels pending Firestore checkout records, stores Paymob order references, completes reservations after PaymobService verification, and reads customer orders.
   - Watches `jewelryReservations` for the authenticated UID.
 - `lib/screens/reservation/reservation_payment_method_screen.dart`
   - Payment-method selection screen. Paymob is the implemented option and the UI is structured for later methods.
 - `lib/screens/reservation/reservation_checkout_screen.dart`
-  - Loads a server-calculated 10%/90% quote and starts Paymob.
+  - Displays the product price and rounded 10%/90% split, creates a pending Firestore checkout, calls `PaymobService.createCheckoutSession`, and opens the returned iframe URL with `url_launcher`.
 - `lib/screens/reservation/reservation_paymob_return_screen.dart`
-  - Handles successful, pending, failed, and cancelled Paymob return states and asks the backend to verify again.
+  - Loads the customer's pending checkout, verifies the returned transaction through `PaymobService.verifyTransaction`, and atomically writes a reservation only after a successful amount/order check. Pending, failed, and cancelled results do not create reservations.
 - `lib/screens/reservation/my_orders_screen.dart`
   - Real-time customer reservation list.
 - `lib/screens/reservation/reservation_detail_screen.dart`
@@ -575,34 +579,19 @@ Existing product details and profile screens were modified:
 - `lib/main.dart`
   - Recognizes `khan_reservation_order_id` in Paymob return URLs and routes to `ReservationPaymobReturnScreen`.
 
-### Reservation Cloud Functions
+### Reservation payment and Firestore workflow
 
-The reservation implementation uses these callable functions in `functions/index.js`:
+The customer-side reservation flow does not call Firebase Cloud Functions. It reuses `PaymobService` from `lib/data/paymob_service.dart`:
 
-- `getJewelryReservationQuote`
-  - Requires Firebase Authentication.
-  - Reads the authoritative `products/{productId}` document.
-  - Re-fetches the current GoldAPI XAU/EGP karat price for jewelry.
-  - Uses the persisted watch `price` field for watch reservations.
-  - Reads the jeweler store name from `applications/{jewelerId}`.
-  - Returns the current total, 10% deposit, and remaining 90% in integer minor units.
-- `createJewelryReservationCheckout`
-  - Requires Firebase Authentication.
-  - Recalculates the authoritative quote instead of accepting Flutter-provided price or deposit values.
-  - Creates `jewelryReservationOrders/{orderId}` and locks the product for 15 minutes.
-  - Sets product `availability` to `reserved_pending` with `reservationLockOrderId` and `reservationLockExpiresAt`.
-  - Creates the Paymob order/payment key using the exact server-calculated deposit.
-  - Merchant order ID format: `khan-rsv-{orderId}`.
-- `confirmJewelryReservationPayment`
-  - Requires Firebase Authentication.
-  - Fetches the transaction directly from Paymob and validates success, no refund/void, EGP currency, exact deposit amount, and merchant order ID.
-  - Does not trust a checkout return or a Flutter success flag.
-  - Atomically creates the reservation, marks the order complete, creates a payment idempotency record, and changes the product to unavailable.
-  - Sets server-authored timestamps and a 48-hour expiry.
-- `cancelJewelryReservationCheckout`
-  - Cancels a pending checkout and releases the matching 15-minute product lock.
+1. `ReservationQuote.fromProduct` takes the price currently displayed for the product, converts it to EGP minor units, and rounds a 10% deposit. The remaining 90% is displayed separately.
+2. `ReservationService.createCheckout` atomically creates a pending `jewelryReservationOrders/{orderId}` record and locks the available product for 15 minutes.
+3. Flutter calls `PaymobService.createCheckoutSession` with the deposit, `khan-rsv-{orderId}` merchant reference, customer email, and a return URL containing `khan_reservation_order_id`.
+4. The returned Paymob iframe URL is opened with `url_launcher`; the Paymob order ID is saved to Firestore.
+5. On return, `ReservationPaymobReturnScreen` calls `PaymobService.verifyTransaction`, which checks transaction success, currency, amount, and merchant order ID.
+6. Only a successful verification is followed by a Firestore transaction that creates `jewelryReservations/{orderId}`, records the Paymob transaction, marks the checkout complete, and makes the product unavailable.
+7. Cancelled or failed attempts release the product lock. Pending transactions remain pending for another verification attempt.
 
-Paymob initiation and confirmation use the existing `PAYMOB_*` environment convention in Firebase Functions. Flutter never receives or stores Paymob API credentials. The checkout redirect includes `khan_reservation_order_id`; successful return still requires `confirmJewelryReservationPayment`.
+Legacy reservation callable exports remain in `functions/index.js` from the earlier implementation, but no current Flutter reservation screen or service calls them. The current flow does not require deploying those exports.
 
 ### Reservation Firestore collections
 
@@ -657,7 +646,7 @@ Paymob initiation and confirmation use the existing `PAYMOB_*` environment conve
 - `createdAt`
 - `expiresAt`
 
-Timestamp fields use Firestore `Timestamp` values or ISO values for existing fields. Reservation expiry is exactly 48 hours after successful server-side Paymob verification.
+Reservation and checkout date fields use Firestore timestamps. Reservation expiry is set to 48 hours after client-side verification of a successful Paymob transaction.
 
 `jewelryReservationPayments/payment-{paymobTransactionId}` is the duplicate-payment idempotency record. It contains `reservationOrderId`, `reservationId`, `customerUid`, Paymob references, amount, currency, and timestamp.
 
@@ -678,42 +667,30 @@ Product documents gain reservation coordination fields:
 - `refunded_deposit`: Deposit refunded
 - `user_didnt_pick_up`: Not collected
 
-These values are read-only in Flutter. The future PHP jeweler dashboard owns status transitions.
+When My Orders is opened after `reservationExpiresAt`, `ReservationService.watchMyReservations` changes an expired `reserved_for_48_hours` record to `user_didnt_pick_up`. Firestore rules permit this status-only update for the owner only after the expiry time. This is client-triggered; there is no scheduled expiration job.
 
 ### Reservation security and duplicate handling
 
-- The Cloud Function owns authoritative price calculation and Paymob verification.
-- Flutter receives no total/deposit amount from a client-supplied business calculation.
-- Product checkout is locked for 15 minutes before Paymob and can be cancelled/released.
-- Successful verification atomically checks the product lock and creates the reservation.
-- Repeating a completed confirmation returns an idempotent success without duplicating the reservation.
-- Paymob transactions are stored in `jewelryReservationPayments` and reject reuse by another order.
-- Firestore rules deny direct client writes to reservations, checkout orders, and payment records.
-- Customers can only read their own reservation/order documents.
-- Public product browsing continues to require `availability == available`.
+- Firestore transactions lock an available product during the 15-minute checkout and atomically create the reservation after PaymobService reports success.
+- A repeated completion for the same order/transaction is idempotent; `jewelryReservationPayments` records transaction IDs to reject reuse by another order.
+- Firestore rules allow authenticated clients to create/update reservation orders, create reservation/payment records, and change reservation product availability as part of the checkout.
+- Customers can read their own reservations and orders; product browsing lists only `availability == available`.
+- **Prototype limitation accepted by the user:** the Paymob API key is in the Flutter `.env` asset and is extractable. A modified client can forge Firestore reservation/payment records or tamper with a client-created quote. Use test credentials and do not use this flow for live money.
 
-`firestore.rules` now contains matching read-only rules for `jewelryReservations`, `jewelryReservationOrders`, and `jewelryReservationPayments`.
+`firestore.rules` permits the prototype Flutter client to create its own reservation orders, reservations, and payment-reference documents; perform the related product lock updates; and read its own reservation data. These permissions allow client-side payment forgery and are not suitable for production.
 `firestore.indexes.json` declares the `jewelryReservations` composite index on `customerUid ASC, createdAt DESC`.
 
 ### Deployment requirements
 
-1. Deploy updated Cloud Functions:
-   `firebase deploy --only functions`
-2. Deploy Firestore rules and indexes:
+1. Deploy the changed Firestore rules and indexes:
    `firebase deploy --only firestore`
-3. Configure Firebase Functions secrets/environment variables:
-   - Paymob API key
-   - Paymob integration ID
-   - Paymob iframe ID
-   - optional Paymob API base URL
-   - existing GoldAPI key
-4. Ensure `GOLD_API_KEY` and the Paymob values remain server-side.
-5. Configure the Paymob redirect URL to allow the Flutter web URL and test callback parameters.
-6. Android and web callback behavior must be tested in the deployed environment. No real Paymob transaction was performed by this implementation pass.
+2. Configure Paymob test values in local `.env` for `PAYMOB_API_KEY`, `PAYMOB_INTEGRATION_ID`, `PAYMOB_IFRAME_ID`, `PAYMOB_API_BASE_URL`, and redirect settings as needed. `.env` is bundled into the Flutter application; use test credentials only and keep it out of Git.
+3. Build and manually test the Paymob return URL in the target Web/mobile environment. Automated tests use mocked Paymob responses; no real Paymob transaction was performed.
+4. Firestore emulator rules validation has not completed in this environment because the emulator requires Java, which is not installed. Do not treat the rules as emulator-verified.
 
 ### Reservation limitations and remaining PHP work
 
-- Automatic reservation expiration from `reserved_for_48_hours` to `user_didnt_pick_up` is not implemented.
+- Expired reservations are marked `user_didnt_pick_up` when the customer's My Orders stream is opened after the 48-hour expiry; there is no scheduled background job.
 - The 25% KHAN / 75% jeweler non-refund distribution is not implemented.
 - PHP does not yet read or manage `jewelryReservations`; future integration should use the documented collection/status fields.
 - PHP must remain read-only until the future jeweler-dashboard status workflow is explicitly implemented.
@@ -728,32 +705,32 @@ The following corrections were identified during the implementation review and a
 
 - `JewelryProduct` now includes `availability` and `canReserve`.
 - The Reserve Now button is disabled for non-available jewelry and watch products and for already unavailable/reserved pieces.
-- The UI is a convenience only; `getJewelryReservationQuote` and `createJewelryReservationCheckout` remain authoritative and recheck availability server-side.
-- `reserved_pending` with an expired lock is cleaned by a Cloud Function transaction:
-  - product availability returns to `available`;
-  - `reservationLockOrderId` and `reservationLockExpiresAt` are deleted;
-  - the matching pending checkout order is changed to `expired` with `expiredAt`.
+- `ReservationService.createCheckout` checks availability in a Firestore transaction before creating its pending checkout.
+- `reserved_pending` with an expired lock is cleaned by the next client checkout transaction:
+  - the matching pending checkout order is changed to `expired` with `expiredAt`;
+  - its product lock is replaced by the new checkout's lock and expiration.
+  - Firestore rules allow this replacement only when the old order is expired/cancelled or missing.
 - An active `reserved_pending` lock remains unavailable until its 15-minute lock expires.
 
 ### Confirmation correctness
 
-- A duplicate confirmation for an already completed order only succeeds if the supplied Paymob transaction ID matches `paymobTransactionId` in the order and a matching payment idempotency record exists.
-- A completed order with a different or unrelated transaction ID is rejected.
-- A failed or refunded Paymob lookup is normalized to the `failed` return status and cannot create a reservation.
+- `PaymobService.verifyTransaction` checks transaction success, EGP, exact amount, and merchant order ID before the Flutter client creates a reservation.
+- Repeating completion for an already completed order/transaction is idempotent and a payment-reference record prevents ordinary reuse.
+- A failed Paymob lookup does not create a reservation; a pending or unverifiable result remains pending for a retry.
 - Checkout cancellation releases the product lock only when it matches the stored `reservationLockOrderId`.
 
 ### Flutter checkout UX
 
 - The checkout summary now displays the product image when the configured public Supabase image URL is available.
-- If Paymob checkout cannot be opened, Flutter calls `cancelJewelryReservationCheckout` to release the server-side lock.
+- If Paymob checkout cannot be opened, Flutter calls `ReservationService.cancelCheckout` to release the Firestore lock.
 - My Orders cards and reservation details display the stored product image path through the existing Supabase public-image helper, with a diamond fallback.
 - Unknown future reservation statuses display `Status unavailable` rather than incorrectly implying that the reservation is active for 48 hours.
 
-### HTTP and service-corrected details
+### Paymob and Firestore details
 
-- `ReservationService` now creates a dedicated HTTP client for each call when no injected client is supplied and closes it afterward.
-- Injected test clients are retained and are not closed by the service.
-- Callable response handling accepts the existing `result` envelope and the `data` compatibility envelope.
+- The reservation screen uses the existing `PaymobService` directly; no callable request or `cloud_functions` Dart package is used.
+- Return handling uses the same direct Paymob transaction lookup as Lira/Para, then `ReservationService.completePayment` writes the Firestore records in one transaction.
+- The displayed deposit is derived from the product price currently in the Flutter model; it is not a trusted backend quote.
 
 ### Focused automated coverage added
 
@@ -766,14 +743,13 @@ The following corrections were identified during the implementation review and a
 
 Relevant existing Profile, Paymob, Investment, Jeweler, and Product tests passed after the review corrections.
 
-### Confirmed security boundaries
+### Prototype payment limitations
 
-- Direct client writes to `jewelryReservations`, `jewelryReservationOrders`, and `jewelryReservationPayments` are denied.
-- Customers can read only reservation/order documents whose `customerUid` equals their Firebase UID.
-- Cloud Functions use Firebase Authentication and the server retains ownership, price, deposit, and Paymob verification logic.
-- A confirmed reservation requires an exact successful Paymob deposit amount and matching `khan-rsv-{orderId}` merchant order.
-- Firestore transactions prevent concurrent checkout/order state from reserving the same product.
-- The payment idempotency collection prevents reuse of a verified Paymob transaction.
+- The client computes the 10% deposit from `JewelryProduct.priceEgp`; the amount is not authoritative against a modified client.
+- Paymob transaction verification uses the existing Flutter `PaymobService`, so the API key is shipped with the Flutter app.
+- Firestore rules permit client reservation/payment writes for this demonstration, so a modified client can forge a reservation.
+- Transactions prevent ordinary concurrent checkouts and repeated writes, but do not make payment verification trusted.
+- Do not use live Paymob credentials or real payments with this prototype implementation.
 
 ### Current implementation limitations
 
@@ -784,6 +760,12 @@ Relevant existing Profile, Paymob, Investment, Jeweler, and Product tests passed
 - No automatic 25% KHAN / 75% jeweler financial split is implemented.
 - No delivery workflow is implemented; pickup remains the documented physical-store process.
 - Live Paymob transactions and callbacks have not been performed in this review.
+
+## 19. Reservation implementation note
+
+Reservation checkout is a Flutter-only prototype and does not depend on Firebase Cloud Functions. It uses `PaymobService` directly, matching the current Lira/Para client integration. The current `cloud_functions` Flutter package was removed because there are no remaining Dart call sites. Older reservation callable exports remain in `functions/index.js` but are unused; do not deploy or rely on them for the current flow.
+
+The Paymob API key shipped in Flutter `.env` and direct client-side Firestore payment status are known demonstration-only security limitations accepted by the user. Use test credentials exclusively and never commit live secret values.
 
 # FUTURE AI AGENT INSTRUCTIONS
 

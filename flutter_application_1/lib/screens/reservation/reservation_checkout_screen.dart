@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/paymob_service.dart';
 import '../../data/reservation_service.dart';
 import '../../khan_colors.dart';
 import '../../models/jeweler_profile.dart';
@@ -26,6 +28,7 @@ class ReservationCheckoutScreen extends StatefulWidget {
 
 class _ReservationCheckoutScreenState extends State<ReservationCheckoutScreen> {
   final ReservationService _service = ReservationService();
+  final PaymobService _paymob = PaymobService();
   late Future<ReservationQuote> _quoteFuture;
   bool _loading = false;
   String? _error;
@@ -33,7 +36,13 @@ class _ReservationCheckoutScreenState extends State<ReservationCheckoutScreen> {
   @override
   void initState() {
     super.initState();
-    _quoteFuture = _service.getQuote(widget.product.id);
+    try {
+      _quoteFuture = Future.value(
+        ReservationQuote.fromProduct(widget.product, widget.jeweler),
+      );
+    } catch (error, stackTrace) {
+      _quoteFuture = Future.error(error, stackTrace);
+    }
   }
 
   Future<void> _proceed() async {
@@ -41,17 +50,34 @@ class _ReservationCheckoutScreenState extends State<ReservationCheckoutScreen> {
       _loading = true;
       _error = null;
     });
+    ReservationCheckout? checkout;
     try {
-      final checkout = await _service.createCheckout(
-        productId: widget.product.id,
-        returnUrl: kIsWeb ? _reservationReturnUrl : null,
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw StateError('Sign in required.');
+      final quote = await _quoteFuture;
+      checkout = await _service.createCheckout(
+        product: widget.product,
+        quote: quote,
+        customerName: user.displayName,
+        customerEmail: user.email,
+        customerPhone: user.phoneNumber,
+      );
+      final session = await _paymob.createCheckoutSession(
+        amountMinor: checkout.depositMinor,
+        merchantOrderId: checkout.merchantOrderId,
+        email: user.email ?? '',
+        returnUrl: kIsWeb ? _reservationReturnUrl(checkout.orderId) : null,
+      );
+      await _service.attachPaymobOrder(
+        orderId: checkout.orderId,
+        paymobOrderId: session.paymobOrderId,
       );
       if (!mounted) {
         await _service.cancelCheckout(checkout.orderId);
         return;
       }
       final opened = await launchUrl(
-        checkout.checkoutUrl,
+        session.checkoutUrl,
         mode: LaunchMode.externalApplication,
       );
       if (!opened) {
@@ -61,15 +87,42 @@ class _ReservationCheckoutScreenState extends State<ReservationCheckoutScreen> {
         }
       }
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      Object? cleanupError;
+      if (checkout != null) {
+        try {
+          await _service.cancelCheckout(checkout.orderId);
+        } catch (failure) {
+          cleanupError = failure;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _error = cleanupError == null
+              ? error.toString()
+              : '$error; checkout cleanup also failed: $cleanupError';
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  String get _reservationReturnUrl {
-    final parameters = Map<String, String>.from(Uri.base.queryParameters);
-    parameters.remove('khan_reservation_order_id');
+  String _reservationReturnUrl(String orderId) {
+    final parameters = Map<String, String>.from(Uri.base.queryParameters)
+      ..removeWhere(
+        (key, _) => const {
+          'khan_reservation_order_id',
+          'id',
+          'transaction_id',
+          'txn_id',
+          'payment_id',
+          'success',
+          'pending',
+          'cancelled',
+          'status',
+        }.contains(key),
+      )
+      ..['khan_reservation_order_id'] = orderId;
     return Uri.base.replace(queryParameters: parameters).toString();
   }
 

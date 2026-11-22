@@ -9,6 +9,18 @@ service cloud.firestore {
         ).data.role == 'masterDealer';
     }
 
+    function reservationOrderPath(orderId) {
+      return /databases/$(database)/documents/jewelryReservationOrders/$(orderId);
+    }
+
+    function reservationPath(reservationId) {
+      return /databases/$(database)/documents/jewelryReservations/$(reservationId);
+    }
+
+    function reservationPaymentPath(paymentId) {
+      return /databases/$(database)/documents/jewelryReservationPayments/$(paymentId);
+    }
+
     match /users/{userId} {
       allow create: if request.auth != null
         && request.auth.uid == userId
@@ -39,26 +51,264 @@ service cloud.firestore {
     }
 
     match /products/{productId} {
-      allow read: if request.auth != null
+      allow get: if request.auth != null
+        && (
+          resource.data.availability == 'available'
+          || (
+            resource.data.reservationLockOrderId is string
+            && get(
+              reservationOrderPath(resource.data.reservationLockOrderId)
+            ).data.customerUid == request.auth.uid
+          )
+          || (
+            resource.data.availability == 'reserved_pending'
+            && resource.data.reservationLockExpiresAt is timestamp
+            && resource.data.reservationLockExpiresAt <= request.time
+          )
+        );
+      allow list: if request.auth != null
         && resource.data.availability == 'available';
-      allow write: if false;
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'availability',
+          'reservationLockOrderId',
+          'reservationLockExpiresAt',
+          'activeReservationId',
+          'reservedAt',
+          'reservedUntil',
+          'reservationStatus',
+          'updatedAt'
+        ])
+        && (
+          (
+            resource.data.availability == 'available'
+            && request.resource.data.availability == 'reserved_pending'
+            && request.resource.data.reservationLockOrderId is string
+            && getAfter(
+              reservationOrderPath(
+                request.resource.data.reservationLockOrderId
+              )
+            ).data.customerUid == request.auth.uid
+            && getAfter(
+              reservationOrderPath(
+                request.resource.data.reservationLockOrderId
+              )
+            ).data.productId == productId
+            && getAfter(
+              reservationOrderPath(
+                request.resource.data.reservationLockOrderId
+              )
+            ).data.status == 'pending'
+          )
+          || (
+            resource.data.availability == 'reserved_pending'
+            && request.resource.data.availability == 'reserved_pending'
+            && resource.data.reservationLockExpiresAt is timestamp
+            && resource.data.reservationLockExpiresAt <= request.time
+            && resource.data.reservationLockOrderId is string
+            && (
+              !exists(reservationOrderPath(
+                resource.data.reservationLockOrderId
+              ))
+              || getAfter(
+                reservationOrderPath(resource.data.reservationLockOrderId)
+              ).data.status in ['expired', 'cancelled']
+            )
+            && request.resource.data.reservationLockOrderId is string
+            && getAfter(
+              reservationOrderPath(
+                request.resource.data.reservationLockOrderId
+              )
+            ).data.customerUid == request.auth.uid
+            && getAfter(
+              reservationOrderPath(
+                request.resource.data.reservationLockOrderId
+              )
+            ).data.productId == productId
+            && getAfter(
+              reservationOrderPath(
+                request.resource.data.reservationLockOrderId
+              )
+            ).data.status == 'pending'
+          )
+          || (
+            resource.data.availability == 'reserved_pending'
+            && request.resource.data.availability == 'unavailable'
+            && request.resource.data.activeReservationId
+              == resource.data.reservationLockOrderId
+            && getAfter(
+              reservationOrderPath(resource.data.reservationLockOrderId)
+            ).data.customerUid == request.auth.uid
+            && getAfter(
+              reservationOrderPath(resource.data.reservationLockOrderId)
+            ).data.status == 'completed'
+            && getAfter(
+              reservationPath(resource.data.reservationLockOrderId)
+            ).data.customerUid == request.auth.uid
+          )
+          || (
+            resource.data.availability == 'reserved_pending'
+            && request.resource.data.availability == 'available'
+            && getAfter(
+              reservationOrderPath(resource.data.reservationLockOrderId)
+            ).data.customerUid == request.auth.uid
+            && getAfter(
+              reservationOrderPath(resource.data.reservationLockOrderId)
+            ).data.status == 'cancelled'
+          )
+        );
+      allow create, delete: if false;
     }
 
     match /jewelryReservations/{reservationId} {
-      allow read: if request.auth != null
+      allow get: if request.auth != null
+        && (
+          !exists(reservationPath(reservationId))
+          || resource.data.customerUid == request.auth.uid
+        );
+      allow list: if request.auth != null
         && resource.data.customerUid == request.auth.uid;
-      allow write: if false;
+      allow create: if request.auth != null
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.reservationId == reservationId
+        && request.resource.data.status == 'reserved_for_48_hours'
+        && getAfter(reservationOrderPath(reservationId)).data.customerUid
+          == request.auth.uid
+        && getAfter(reservationOrderPath(reservationId)).data.status
+          == 'completed'
+        && getAfter(reservationOrderPath(reservationId)).data.paymobTransactionId
+          == request.resource.data.paymobTransactionId
+        && request.resource.data.productId
+          == getAfter(reservationOrderPath(reservationId)).data.productId
+        && request.resource.data.depositAmountMinorUnits
+          == getAfter(reservationOrderPath(reservationId)).data.depositAmountMinorUnits;
+      allow update: if request.auth != null
+        && resource.data.customerUid == request.auth.uid
+        && resource.data.status == 'reserved_for_48_hours'
+        && request.time >= resource.data.reservationExpiresAt
+        && request.resource.data.status == 'user_didnt_pick_up'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status']);
+      allow delete: if false;
     }
 
     match /jewelryReservationOrders/{orderId} {
-      allow read: if request.auth != null
+      allow get: if request.auth != null
+        && (
+          !exists(reservationOrderPath(orderId))
+          || resource.data.customerUid == request.auth.uid
+          || (
+            resource.data.status == 'pending'
+            && resource.data.expiresAt is timestamp
+            && resource.data.expiresAt <= request.time
+          )
+        );
+      allow list: if request.auth != null
         && resource.data.customerUid == request.auth.uid;
-      allow write: if false;
+      allow create: if request.auth != null
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.currency == 'EGP'
+        && request.resource.data.paymentGateway == 'paymob'
+        && request.resource.data.totalPriceMinorUnits is int
+        && request.resource.data.totalPriceMinorUnits > 0
+        && request.resource.data.depositAmountMinorUnits is int
+        && request.resource.data.depositAmountMinorUnits > 0
+        && request.resource.data.remainingBalanceMinorUnits
+          == request.resource.data.totalPriceMinorUnits
+            - request.resource.data.depositAmountMinorUnits
+        && request.resource.data.keys().hasOnly([
+          'orderId',
+          'customerUid',
+          'customerName',
+          'customerEmail',
+          'customerPhone',
+          'productId',
+          'productName',
+          'productImagePath',
+          'jewelerId',
+          'jewelerStoreName',
+          'totalPriceMinorUnits',
+          'depositAmountMinorUnits',
+          'remainingBalanceMinorUnits',
+          'currency',
+          'paymentGateway',
+          'status',
+          'createdAt',
+          'expiresAt',
+          'merchantOrderId'
+        ]);
+      allow update: if request.auth != null
+        && resource.data.customerUid == request.auth.uid
+        && resource.data.status == 'pending'
+        && (
+          (
+            request.resource.data.status == 'pending'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['paymobOrderId'])
+          )
+          || (
+            request.resource.data.status == 'cancelled'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'cancelledAt'])
+          )
+          || (
+            request.resource.data.status == 'expired'
+            && request.time >= resource.data.expiresAt
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'expiredAt'])
+          )
+          || (
+            request.resource.data.status == 'completed'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'status',
+                'reservationId',
+                'paymobTransactionId',
+                'paymentTransactionId',
+                'paidAt',
+                'completedAt'
+              ])
+            && getAfter(reservationPath(orderId)).data.customerUid
+              == request.auth.uid
+            && getAfter(reservationPath(orderId)).data.paymobTransactionId
+              == request.resource.data.paymobTransactionId
+            && getAfter(reservationPaymentPath(
+              'payment-' + request.resource.data.paymobTransactionId
+            )).data.reservationOrderId == orderId
+          )
+        );
+      allow delete: if false;
     }
 
     match /jewelryReservationPayments/{paymentId} {
-      allow read: if false;
-      allow write: if false;
+      allow get: if request.auth != null
+        && (
+          !exists(reservationPaymentPath(paymentId))
+          || resource.data.customerUid == request.auth.uid
+        );
+      allow list: if request.auth != null
+        && resource.data.customerUid == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.customerUid == request.auth.uid
+        && getAfter(
+          reservationOrderPath(request.resource.data.reservationOrderId)
+        ).data.status == 'completed'
+        && getAfter(
+          reservationOrderPath(request.resource.data.reservationOrderId)
+        ).data.paymobTransactionId
+          == request.resource.data.paymobTransactionId
+        && request.resource.data.keys().hasOnly([
+          'reservationOrderId',
+          'reservationId',
+          'customerUid',
+          'paymobTransactionId',
+          'paymobOrderId',
+          'amountMinorUnits',
+          'currency',
+          'createdAt'
+        ]);
+      allow update, delete: if false;
     }
 
     match /masterDealerInventory/{assetId} {

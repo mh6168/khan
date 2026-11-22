@@ -469,7 +469,7 @@ async function calculateReservationQuote(productId) {
   };
 }
 
-exports.getJewelryReservationQuote = onCall(async (request) => {
+exports.getJewelryReservationQuote = onCall({ secrets: ["GOLD_API_KEY"] }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
   const quote = await calculateReservationQuote(request.data.productId);
   return {
@@ -480,7 +480,14 @@ exports.getJewelryReservationQuote = onCall(async (request) => {
   };
 });
 
-exports.createJewelryReservationCheckout = onCall(async (request) => {
+exports.createJewelryReservationCheckout = onCall({
+  secrets: [
+    "GOLD_API_KEY",
+    "PAYMOB_API_KEY",
+    "PAYMOB_INTEGRATION_ID",
+    "PAYMOB_IFRAME_ID",
+  ],
+}, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
   const quote = await calculateReservationQuote(request.data.productId);
   if (!quote.jewelerId) throw new HttpsError("failed-precondition", "The jeweler is unavailable.");
@@ -609,11 +616,12 @@ exports.createJewelryReservationCheckout = onCall(async (request) => {
   } catch (error) {
     await releaseReservationCheckout(orderId, request.auth.uid);
     if (error instanceof HttpsError) throw error;
+    console.error("Reservation Paymob checkout creation failed:", error);
     throw new HttpsError("internal", "Paymob checkout could not be created.");
   }
 });
 
-exports.confirmJewelryReservationPayment = onCall(async (request) => {
+exports.confirmJewelryReservationPayment = onCall({ secrets: ["PAYMOB_API_KEY"] }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
   const orderId = String(request.data.orderId || "");
   const transactionId = String(request.data.paymobTransactionId || "");

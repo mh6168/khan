@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/paymob_service.dart';
 import '../../data/reservation_service.dart';
 import '../../khan_colors.dart';
 import '../customer_home_screen.dart';
@@ -32,6 +33,7 @@ class ReservationPaymobReturnScreen extends StatefulWidget {
 class _ReservationPaymobReturnScreenState
     extends State<ReservationPaymobReturnScreen> {
   final ReservationService _service = ReservationService();
+  final PaymobService _paymob = PaymobService();
   String _status = 'verifying';
   String _message = 'Checking the reservation payment with Paymob...';
 
@@ -54,30 +56,52 @@ class _ReservationPaymobReturnScreenState
       return;
     }
     try {
-      final result = await _service.confirmPayment(
-        orderId: widget.orderId,
+      final checkout = await _service.getCheckout(widget.orderId);
+      if (checkout.status != 'pending' && checkout.status != 'completed') {
+        throw StateError('Reservation checkout is no longer available.');
+      }
+      final result = await _paymob.verifyTransaction(
         transactionId: widget.transactionId!,
+        expectedMerchantOrderId: checkout.merchantOrderId,
+        expectedAmountMinor: checkout.depositMinor,
       );
-      if (!mounted) return;
-      final status = result['status']?.toString() ?? 'failed';
-      setState(() {
-        _status = status;
-        if (status == 'success') {
-          _message = 'Deposit verified. Your reservation was created.';
-        } else if (status == 'pending') {
+      if (result.status == PaymobVerificationStatus.pending) {
+        if (!mounted) return;
+        setState(() {
+          _status = 'pending';
           _message =
               'The payment is still pending. No reservation was created yet.';
-        } else if (status == 'cancelled') {
-          _message = 'The Paymob payment was cancelled.';
-        } else {
-          _message = 'Paymob did not confirm a successful deposit payment.';
-        }
+        });
+        return;
+      }
+      if (result.status != PaymobVerificationStatus.success ||
+          result.payment == null) {
+        await _service.cancelCheckout(widget.orderId);
+        if (!mounted) return;
+        setState(() {
+          _status = widget.wasCancelled ? 'cancelled' : 'failed';
+          _message = widget.wasCancelled
+              ? 'The Paymob payment was cancelled.'
+              : 'Paymob did not confirm a successful deposit payment.';
+        });
+        return;
+      }
+      await _service.completePayment(
+        orderId: widget.orderId,
+        payment: result.payment!,
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = 'success';
+        _message = 'Deposit verified. Your reservation was created.';
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _status = 'failed';
-        _message = 'The reservation payment could not be verified. $error';
+        _status = 'pending';
+        _message =
+            'The payment could not be verified yet. No reservation was created. '
+            'Check again shortly. $error';
       });
     }
   }
