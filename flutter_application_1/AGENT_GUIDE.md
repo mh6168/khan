@@ -678,7 +678,7 @@ When My Orders is opened after `reservationExpiresAt`, `ReservationService.watch
 - **Prototype limitation accepted by the user:** the Paymob API key is in the Flutter `.env` asset and is extractable. A modified client can forge Firestore reservation/payment records or tamper with a client-created quote. Use test credentials and do not use this flow for live money.
 
 `firestore.rules` permits the prototype Flutter client to create its own reservation orders, reservations, and payment-reference documents; perform the related product lock updates; and read its own reservation data. These permissions allow client-side payment forgery and are not suitable for production.
-`firestore.indexes.json` declares the `jewelryReservations` composite index on `customerUid ASC, createdAt DESC`.
+`firestore.indexes.json` declares the `jewelryReservations` composite index on `customerUid ASC, createdAt DESC`. This index is required by My Orders' customer filter plus descending creation-time sort.
 
 ### Deployment requirements
 
@@ -731,6 +731,14 @@ The following corrections were identified during the implementation review and a
 - The reservation screen uses the existing `PaymobService` directly; no callable request or `cloud_functions` Dart package is used.
 - Return handling uses the same direct Paymob transaction lookup as Lira/Para, then `ReservationService.completePayment` writes the Firestore records in one transaction.
 - The displayed deposit is derived from the product price currently in the Flutter model; it is not a trusted backend quote.
+
+### My Orders loading fix (2026-11-22)
+
+- `ReservationService.completePayment` writes reservations to `jewelryReservations/{orderId}` with `customerUid` and `createdAt`.
+- `main.dart` passes the authenticated Firebase UID to `MyOrdersScreen`; `watchMyReservations` filters on that same `customerUid`, then orders by `createdAt DESC`.
+- Firestore rules permit list reads when `request.auth.uid` matches each result's `customerUid`; the saved collection, customer UID, and rule condition were consistent.
+- The deployed `khan-81cd6` project had no composite indexes, although the required index was already present in `firestore.indexes.json`. The missing deployed index caused Firestore's query to fail and My Orders to show its generic load error.
+- Deployed the existing index with `firebase deploy --only firestore:indexes --project khan-81cd6` and confirmed it appears in the deployed index list. No Flutter payment code or Firestore rules were changed for this fix.
 
 ### Focused automated coverage added
 
