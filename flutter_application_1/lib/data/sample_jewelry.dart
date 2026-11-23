@@ -53,6 +53,7 @@ const newArrivals = [
     priceEgp: 22900,
     artworkIcon: Icons.watch,
     artworkColor: Color(0xFF59483C),
+    productType: 'watch',
   ),
 ];
 

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter_application_1/data/sample_jewelry.dart';
 import 'package:flutter_application_1/models/jewelry_category.dart';
 import 'package:flutter_application_1/screens/customer_home_screen.dart';
 import 'package:flutter_application_1/widgets/category_card.dart';
+import 'package:flutter_application_1/widgets/product_card.dart';
 
 void main() {
   testWidgets('homepage categories fit phone and tablet widths', (
@@ -11,7 +13,11 @@ void main() {
   ) async {
     for (final size in [const Size(320, 568), const Size(1200, 900)]) {
       await tester.binding.setSurfaceSize(size);
-      await tester.pumpWidget(const MaterialApp(home: CustomerHomeScreen()));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CustomerHomeScreen(productsFuture: Future.value(sampleJewelry)),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(TextField), findsOneWidget);
@@ -29,16 +35,28 @@ void main() {
     await tester.binding.setSurfaceSize(null);
   });
 
-  testWidgets('all categories open the shared empty listing and return home', (
+  testWidgets('all categories open their matching listing and return home', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: CustomerHomeScreen()));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomerHomeScreen(productsFuture: Future.value(sampleJewelry)),
+      ),
+    );
 
     expect(find.byType(TextField), findsOneWidget);
     expect(
       find.text('No jewelry available in this category yet.'),
       findsNothing,
     );
+    const categoryProductNames = {
+      JewelryCategory.rings: 'Nile Light Ring',
+      JewelryCategory.necklaces: 'Moonlit Chain',
+      JewelryCategory.bracelets: 'Cairo Links',
+      JewelryCategory.earrings: 'Desert Bloom',
+      JewelryCategory.pendants: 'Lotus Pendant',
+      JewelryCategory.watches: 'Heritage Watch',
+    };
 
     for (final category in JewelryCategory.values) {
       final categoryCard = find.byWidgetPredicate(
@@ -49,11 +67,15 @@ void main() {
       await tester.tap(categoryCard);
       await tester.pumpAndSettle();
 
-      expect(find.text(category.label), findsOneWidget);
       expect(
-        find.text('No jewelry available in this category yet.'),
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.text(category.label),
+        ),
         findsOneWidget,
       );
+      expect(find.text(categoryProductNames[category]!), findsOneWidget);
+      expect(find.byType(ProductCard), findsOneWidget);
 
       await tester.pageBack();
       await tester.pumpAndSettle();
@@ -63,7 +85,11 @@ void main() {
   testWidgets('favorites can be saved from the home product cards', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: CustomerHomeScreen()));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomerHomeScreen(productsFuture: Future.value(sampleJewelry)),
+      ),
+    );
     await tester.pumpAndSettle();
 
     final favoriteButton = find.byTooltip('Add to favorites').first;

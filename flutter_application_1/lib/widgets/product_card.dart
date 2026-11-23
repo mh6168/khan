@@ -11,19 +11,21 @@ class ProductCard extends StatelessWidget {
     this.isFavorite = false,
     this.onFavoriteTap,
     this.onTap,
+    this.expand = false,
   });
 
   final JewelryProduct product;
   final bool isFavorite;
   final VoidCallback? onFavoriteTap;
   final VoidCallback? onTap;
+  final bool expand;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 218,
+        width: expand ? double.infinity : 218,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -84,9 +86,7 @@ class ProductCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 7),
                   Text(
-                    product.priceEgp == null
-                        ? 'Price unavailable'
-                        : '${product.priceEgp!.toStringAsFixed(0)} EGP',
+                    _displayPrice,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: khanDark,
                       fontWeight: FontWeight.w700,
@@ -99,6 +99,14 @@ class ProductCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String get _displayPrice {
+    final price = product.priceEgp;
+    if (price == null || !price.isFinite || price < 0) {
+      return 'Price unavailable';
+    }
+    return '${price.toStringAsFixed(0)} EGP';
   }
 }
 

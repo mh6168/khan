@@ -12,6 +12,7 @@ import '../widgets/customer_bottom_navigation.dart';
 import '../widgets/home_header.dart';
 import '../widgets/home_search_bar.dart';
 import '../widgets/home_sections.dart';
+import '../widgets/product_sort_control.dart';
 import 'category_listing_screen.dart';
 import 'account_settings_screen.dart';
 import 'favorites_screen.dart';
@@ -25,11 +26,13 @@ class CustomerHomeScreen extends StatefulWidget {
     this.customerId,
     this.customerName,
     this.customerEmail,
+    this.productsFuture,
   });
 
   final String? customerId;
   final String? customerName;
   final String? customerEmail;
+  final Future<List<JewelryProduct>>? productsFuture;
 
   @override
   State<CustomerHomeScreen> createState() => _CustomerHomeScreenState();
@@ -40,6 +43,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   late Future<List<JewelryProduct>> _products;
   int _selectedTab = 0;
   String _searchQuery = '';
+  ProductSortOption _sortOption = ProductSortOption.recommended;
   final Set<String> _favoriteIds = {};
   List<JewelryProduct> _loadedProducts = [];
 
@@ -47,7 +51,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   void initState() {
     super.initState();
     _customerProfile = _loadCustomerProfile();
-    _products = ProductService().fetchAvailableProducts();
+    _products =
+        widget.productsFuture ?? ProductService().fetchAvailableProducts();
   }
 
   @override
@@ -56,6 +61,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     if (oldWidget.customerId != widget.customerId ||
         oldWidget.customerName != widget.customerName) {
       _customerProfile = _loadCustomerProfile();
+    }
+    if (oldWidget.productsFuture != widget.productsFuture) {
+      _products =
+          widget.productsFuture ?? ProductService().fetchAvailableProducts();
     }
   }
 
@@ -247,7 +256,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   }
 
   Widget _buildProductSections(List<JewelryProduct> products, String query) {
-    final matchingProducts = _matchingProducts(products, query);
+    final matchingProducts = sortProducts(
+      _matchingProducts(products, query),
+      _sortOption,
+    );
     if (matchingProducts.isEmpty) {
       return _buildNoResults(
         query.isEmpty ? 'No available products yet.' : 'No matching jewelry.',
@@ -259,6 +271,23 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        HomeSectionHeading(
+          title: query.isEmpty ? 'Discover jewelry' : 'Search results',
+          subtitle:
+              '${matchingProducts.length} '
+              '${matchingProducts.length == 1 ? 'piece' : 'pieces'}',
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            ProductSortControl(
+              value: _sortOption,
+              onChanged: (option) => setState(() => _sortOption = option),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         HomeProductSection(
           title: query.isEmpty ? 'Trending jewelry' : 'Matching jewelry',
           subtitle: 'Pieces everyone is talking about.',
@@ -307,9 +336,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       itemCount: categories.length,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: width < 600 ? 0.9 : 0.95,
+        crossAxisSpacing: width < 600 ? 10 : 14,
+        mainAxisSpacing: width < 600 ? 12 : 16,
+        childAspectRatio: width < 600 ? 0.78 : 0.88,
       ),
       itemBuilder: (context, index) {
         final category = categories[index];
@@ -317,7 +346,10 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           category: category,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => CategoryListingScreen(category: category),
+              builder: (_) => CategoryListingScreen(
+                category: category,
+                productsFuture: _products,
+              ),
             ),
           ),
         );

@@ -120,6 +120,7 @@ class FeaturedCollectionBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: khanSecondaryDark,
         borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: khanGold.withValues(alpha: 0.28)),
       ),
       child: Row(
         children: [

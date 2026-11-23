@@ -3,9 +3,14 @@ import 'package:flutter/material.dart';
 import '../khan_colors.dart';
 
 class HomeSearchBar extends StatelessWidget {
-  const HomeSearchBar({super.key, required this.onChanged});
+  const HomeSearchBar({
+    super.key,
+    required this.onChanged,
+    this.hintText = 'Search jewelry...',
+  });
 
   final ValueChanged<String> onChanged;
+  final String hintText;
 
   @override
   Widget build(BuildContext context) {
@@ -13,12 +18,15 @@ class HomeSearchBar extends StatelessWidget {
       onChanged: onChanged,
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
-        hintText: 'Search jewelry...',
-        hintStyle: const TextStyle(color: khanSecondaryDark),
+        hintText: hintText,
+        hintStyle: TextStyle(
+          color: khanSecondaryDark.withValues(alpha: 0.72),
+          fontWeight: FontWeight.w500,
+        ),
         prefixIcon: const Icon(Icons.search_rounded, color: khanGold),
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(vertical: 17),
+        contentPadding: const EdgeInsets.symmetric(vertical: 18),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
